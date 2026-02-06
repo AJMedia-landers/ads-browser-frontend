@@ -281,3 +281,191 @@ export async function getCategories(): Promise<string[]> {
     );
     return result.rows.map((row) => row.category);
 }
+
+// ============================================
+// Ads Browser Functions
+// ============================================
+
+export interface Ad {
+    id: number;
+    country: string;
+    date: string;
+    title: string;
+    ad_image_url: string;
+    cdn_url: string;
+    landing_page: string;
+    website: string;
+    location: string;
+    ad_network: string;
+    device: string;
+    occurrences: number;
+    hour_of_day: number;
+    category: string;
+    image_hash: string;
+    type: string;
+}
+
+export async function getDistinctDates(country: string): Promise<string[]> {
+    const result = await pool.query(
+        `SELECT DISTINCT DATE(date)::text as date_only
+         FROM scraping_results_staging_clone
+         WHERE country = $1 AND date IS NOT NULL
+         ORDER BY date_only DESC`,
+        [country]
+    );
+    return result.rows.map((row) => row.date_only);
+}
+
+export interface AdsResult {
+    ads: Ad[];
+    total: number;
+}
+
+export interface AdsFilters {
+    uniqueUrls?: boolean;
+    emptyCategory?: boolean;
+}
+
+export async function getAdsByCountryAndDate(
+    country: string,
+    date: string,
+    limit: number = 50,
+    offset: number = 0,
+    filters?: AdsFilters
+): Promise<AdsResult> {
+    const params: (string | number)[] = [country, date];
+    const paramIndex = 3;
+
+    // Build WHERE clause
+    let whereClause = 'WHERE country = $1 AND DATE(date) = $2::date';
+
+    if (filters?.emptyCategory) {
+        whereClause += ` AND (category IS NULL OR category = '' OR LOWER(category) = 'unknown')`;
+    }
+
+    // SQL expression to clean landing_page (mirrors the cleanUrl function):
+    // - Remove query params (everything after ?)
+    // - Remove www. prefix
+    // - Lowercase
+    const cleanedLandingPageExpr = `
+        LOWER(
+            REGEXP_REPLACE(
+                REGEXP_REPLACE(landing_page, '\\?.*$', ''),
+                '^(https?://)(www\\.)?',
+                '\\1'
+            )
+        )
+    `;
+
+    // For unique URLs, use DISTINCT ON with cleaned landing page
+    const selectDistinct = filters?.uniqueUrls ? `DISTINCT ON (${cleanedLandingPageExpr})` : '';
+    const orderBy = filters?.uniqueUrls
+        ? `ORDER BY ${cleanedLandingPageExpr}, id DESC`
+        : 'ORDER BY id DESC';
+
+    // Get total count
+    let countQuery: string;
+    if (filters?.uniqueUrls) {
+        countQuery = `SELECT COUNT(DISTINCT ${cleanedLandingPageExpr}) as total
+                      FROM scraping_results_staging_clone
+                      ${whereClause}`;
+    } else {
+        countQuery = `SELECT COUNT(*) as total
+                      FROM scraping_results_staging_clone
+                      ${whereClause}`;
+    }
+
+    const countResult = await pool.query(countQuery, params);
+    const total = parseInt(countResult.rows[0].total);
+
+    // Get paginated results
+    // For DISTINCT ON, we need a subquery to apply LIMIT/OFFSET correctly
+    let dataQuery: string;
+    if (filters?.uniqueUrls) {
+        dataQuery = `SELECT * FROM (
+            SELECT ${selectDistinct} id, country, date, title, ad_image_url, cdn_url, landing_page,
+                website, location, ad_network, device, occurrences, hour_of_day,
+                category, image_hash, type
+            FROM scraping_results_staging_clone
+            ${whereClause}
+            ${orderBy}
+        ) sub
+        ORDER BY id DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    } else {
+        dataQuery = `SELECT id, country, date, title, ad_image_url, cdn_url, landing_page,
+                website, location, ad_network, device, occurrences, hour_of_day,
+                category, image_hash, type
+            FROM scraping_results_staging_clone
+            ${whereClause}
+            ${orderBy}
+            LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    }
+
+    params.push(limit, offset);
+    const result = await pool.query(dataQuery, params);
+    return { ads: result.rows, total };
+}
+
+export interface UpdateAdCategoryResult {
+    rowsUpdated: number;
+    mappingCreated: boolean;
+}
+
+export async function updateAdCategoryByLandingPage(
+    landingPage: string,
+    category: string
+): Promise<UpdateAdCategoryResult> {
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Clean the URL for the mapping
+        const cleanedUrl = cleanUrl(landingPage);
+        const baseUrl = cleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
+        const matchPattern = `%${baseUrl}%`;
+
+        // Check if a mapping already exists for this cleaned URL
+        const existingMapping = await client.query(
+            'SELECT id FROM url_mappings_scraping_results WHERE cleaned_url = $1',
+            [cleanedUrl]
+        );
+
+        let mappingCreated = false;
+        if (existingMapping.rows.length > 0) {
+            // Update existing mapping
+            await client.query(
+                `UPDATE url_mappings_scraping_results
+                 SET category = $1
+                 WHERE cleaned_url = $2`,
+                [category, cleanedUrl]
+            );
+        } else {
+            // Create new mapping
+            await client.query(
+                `INSERT INTO url_mappings_scraping_results (cleaned_url, category)
+                 VALUES ($1, $2)`,
+                [cleanedUrl, category]
+            );
+            mappingCreated = true;
+        }
+
+        // Update all matching records in scraping_results_staging_clone
+        const result = await client.query(
+            `UPDATE scraping_results_staging_clone
+             SET category = $1, updated_at = NOW()
+             WHERE landing_page ILIKE $2`,
+            [category, matchPattern]
+        );
+
+        await client.query('COMMIT');
+
+        return { rowsUpdated: result.rowCount ?? 0, mappingCreated };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
