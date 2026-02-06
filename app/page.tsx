@@ -108,6 +108,7 @@ function HomeContent() {
     const [filterEmptyCategory, setFilterEmptyCategory] = useState(false);
     const [sortColumn, setSortColumn] = useState<string>('id');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+    const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
     const adsLimit = 50;
 
     // Update URL when ads browser state changes
@@ -168,9 +169,10 @@ function HomeContent() {
             const res = await fetch(`/api/ads/dates?country=${encodeURIComponent(country)}`);
             const data = await res.json();
             // Dates come as "YYYY-MM-DD" from PostgreSQL
-            setDates(data || []);
+            setDates(Array.isArray(data) ? data : []);
         } catch {
             setError('Failed to fetch dates');
+            setDates([]);
         } finally {
             setLoadingDates(false);
         }
@@ -258,6 +260,43 @@ function HomeContent() {
         setEditAdCategory('');
     };
 
+    const handleMarkUninterested = (ad: Ad) => {
+        setConfirmAction({
+            message: `Mark this URL as uninterested? This will delete ALL ads with this landing page and it will never appear again.`,
+            onConfirm: async () => {
+                setConfirmAction(null);
+                setSavingAd(true);
+                setError('');
+                try {
+                    const res = await fetch('/api/ads/uninterested', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ landingPage: ad.landing_page }),
+                    });
+
+                    if (!res.ok) throw new Error('Failed to mark as uninterested');
+
+                    const data = await res.json();
+                    setSuccess(`Marked as uninterested. ${data.rowsDeleted} ad records deleted.`);
+                    setTimeout(() => setSuccess(''), 5000);
+
+                    const cleanedUrl = cleanUrl(ad.landing_page);
+                    const baseUrl = cleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
+                    setAds(prevAds => prevAds.filter(a => {
+                        const aCleanedUrl = cleanUrl(a.landing_page);
+                        const aBaseUrl = aCleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
+                        return !(aBaseUrl.includes(baseUrl) || baseUrl.includes(aBaseUrl));
+                    }));
+                    setAdsTotal(prev => prev - data.rowsDeleted);
+                } catch {
+                    setError('Failed to mark as uninterested');
+                } finally {
+                    setSavingAd(false);
+                }
+            },
+        });
+    };
+
     useEffect(() => {
         fetchMappings();
     }, [fetchMappings]);
@@ -335,23 +374,27 @@ function HomeContent() {
         }
     };
 
-    const handleDelete = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this mapping?')) return;
-
-        setDeleting(id);
-        setError('');
-        try {
-            const res = await fetch(`/api/mappings/${id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error('Failed to delete');
-            setSuccess('Mapping deleted.');
-            setTimeout(() => setSuccess(''), 3000);
-            fetchMappings();
-            fetchCategories();
-        } catch {
-            setError('Failed to delete mapping');
-        } finally {
-            setDeleting(null);
-        }
+    const handleDelete = (id: number) => {
+        setConfirmAction({
+            message: 'Are you sure you want to delete this mapping?',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                setDeleting(id);
+                setError('');
+                try {
+                    const res = await fetch(`/api/mappings/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete');
+                    setSuccess('Mapping deleted.');
+                    setTimeout(() => setSuccess(''), 3000);
+                    fetchMappings();
+                    fetchCategories();
+                } catch {
+                    setError('Failed to delete mapping');
+                } finally {
+                    setDeleting(null);
+                }
+            },
+        });
     };
 
     const handleAdd = async (e: React.FormEvent) => {
@@ -806,17 +849,25 @@ function HomeContent() {
                                                                     </div>
                                                                 </div>
                                                             ) : (
-                                                                <div
-                                                                    className="ads-category-display"
-                                                                    onClick={() => handleEditAd(ad)}
-                                                                    title="Click to edit category"
-                                                                >
-                                                                    <span className="category-badge editable">
+                                                                <div className="ads-category-display">
+                                                                    <span
+                                                                        className="category-badge editable"
+                                                                        onClick={() => handleEditAd(ad)}
+                                                                        title="Click to edit category"
+                                                                    >
                                                                         {ad.category || 'Uncategorized'}
                                                                     </span>
-                                                                    {ad.type && (
-                                                                        <span className="type-tag">{ad.type}</span>
-                                                                    )}
+                                                                    <div className="ads-type-row">
+                                                                        {ad.type && (
+                                                                            <span className="type-tag">{ad.type}</span>
+                                                                        )}
+                                                                        <button
+                                                                            className="uninterested-btn"
+                                                                            onClick={() => handleMarkUninterested(ad)}
+                                                                        >
+                                                                            Uninterested
+                                                                        </button>
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </td>
@@ -903,6 +954,29 @@ function HomeContent() {
                     )}
                 </div>
             </main>
+
+            {/* Confirm modal */}
+            {confirmAction && (
+                <div className="modal-overlay" onClick={() => setConfirmAction(null)}>
+                    <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+                        <p className="confirm-message">{confirmAction.message}</p>
+                        <div className="confirm-actions">
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setConfirmAction(null)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-danger"
+                                onClick={confirmAction.onConfirm}
+                            >
+                                Confirm
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Loading overlay */}
             {(saving || adding || savingAd) && (

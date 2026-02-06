@@ -14,7 +14,7 @@ const pool = new Pool({
 export default pool;
 
 // Table name for scraping results (configurable via env)
-const SCRAPING_TABLE = process.env.SCRAPING_RESULTS_TABLE || '${SCRAPING_TABLE}';
+const SCRAPING_TABLE = process.env.SCRAPING_RESULTS_TABLE || 'scraping_results_staging_clone';
 
 export interface UrlMapping {
     id: number;
@@ -310,7 +310,7 @@ export interface Ad {
 
 export async function getDistinctDates(country: string): Promise<string[]> {
     const result = await pool.query(
-        `SELECT DISTINCT DATE(date)::text as date_only
+        `SELECT DISTINCT date::date::text as date_only
          FROM ${SCRAPING_TABLE}
          WHERE country = $1 AND date IS NOT NULL
          ORDER BY date_only DESC`,
@@ -483,6 +483,61 @@ export async function updateAdCategoryByLandingPage(
         await client.query('COMMIT');
 
         return { rowsUpdated: result.rowCount ?? 0, mappingCreated };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
+export interface MarkUninterestedResult {
+    rowsDeleted: number;
+}
+
+export async function markAdUninterested(
+    landingPage: string
+): Promise<MarkUninterestedResult> {
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const cleanedUrl = cleanUrl(landingPage);
+        const baseUrl = cleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
+        const matchPattern = `%${baseUrl}%`;
+
+        // Create or update URL mapping with "Manual Uninterested"
+        const existingMapping = await client.query(
+            'SELECT id FROM url_mappings_scraping_results WHERE cleaned_url = $1',
+            [cleanedUrl]
+        );
+
+        if (existingMapping.rows.length > 0) {
+            await client.query(
+                `UPDATE url_mappings_scraping_results
+                 SET category = 'Manual Uninterested'
+                 WHERE cleaned_url = $1`,
+                [cleanedUrl]
+            );
+        } else {
+            await client.query(
+                `INSERT INTO url_mappings_scraping_results (cleaned_url, category)
+                 VALUES ($1, 'Manual Uninterested')`,
+                [cleanedUrl]
+            );
+        }
+
+        // Delete all matching records from scraping table
+        const result = await client.query(
+            `DELETE FROM ${SCRAPING_TABLE}
+             WHERE landing_page ILIKE $1`,
+            [matchPattern]
+        );
+
+        await client.query('COMMIT');
+
+        return { rowsDeleted: result.rowCount ?? 0 };
     } catch (error) {
         await client.query('ROLLBACK');
         throw error;
