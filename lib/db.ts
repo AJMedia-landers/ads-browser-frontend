@@ -326,12 +326,26 @@ export interface AdsFilters {
     emptyCategory?: boolean;
 }
 
+export interface AdsSort {
+    column: string;
+    direction: 'asc' | 'desc';
+}
+
+const ALLOWED_SORT_COLUMNS: Record<string, string> = {
+    id: 'id',
+    category: 'category',
+    title: 'title',
+    landing_page: 'landing_page',
+    occurrences: 'occurrences',
+};
+
 export async function getAdsByCountryAndDate(
     country: string,
     date: string,
     limit: number = 50,
     offset: number = 0,
-    filters?: AdsFilters
+    filters?: AdsFilters,
+    sort?: AdsSort
 ): Promise<AdsResult> {
     const params: (string | number)[] = [country, date];
     const paramIndex = 3;
@@ -357,11 +371,15 @@ export async function getAdsByCountryAndDate(
         )
     `;
 
+    // Determine sort column and direction
+    const sortCol = ALLOWED_SORT_COLUMNS[sort?.column || 'id'] || 'id';
+    const sortDir = sort?.direction === 'asc' ? 'ASC' : 'DESC';
+
     // For unique URLs, use DISTINCT ON with cleaned landing page
     const selectDistinct = filters?.uniqueUrls ? `DISTINCT ON (${cleanedLandingPageExpr})` : '';
-    const orderBy = filters?.uniqueUrls
+    const distinctOrderBy = filters?.uniqueUrls
         ? `ORDER BY ${cleanedLandingPageExpr}, id DESC`
-        : 'ORDER BY id DESC';
+        : `ORDER BY ${sortCol} ${sortDir}`;
 
     // Get total count
     let countQuery: string;
@@ -379,7 +397,7 @@ export async function getAdsByCountryAndDate(
     const total = parseInt(countResult.rows[0].total);
 
     // Get paginated results
-    // For DISTINCT ON, we need a subquery to apply LIMIT/OFFSET correctly
+    // For DISTINCT ON, we need a subquery to apply LIMIT/OFFSET and custom sorting correctly
     let dataQuery: string;
     if (filters?.uniqueUrls) {
         dataQuery = `SELECT * FROM (
@@ -388,9 +406,9 @@ export async function getAdsByCountryAndDate(
                 category, image_hash, type
             FROM scraping_results_staging_clone
             ${whereClause}
-            ${orderBy}
+            ${distinctOrderBy}
         ) sub
-        ORDER BY id DESC
+        ORDER BY ${sortCol} ${sortDir}
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     } else {
         dataQuery = `SELECT id, country, date, title, ad_image_url, cdn_url, landing_page,
@@ -398,7 +416,7 @@ export async function getAdsByCountryAndDate(
                 category, image_hash, type
             FROM scraping_results_staging_clone
             ${whereClause}
-            ${orderBy}
+            ORDER BY ${sortCol} ${sortDir}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     }
 

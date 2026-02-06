@@ -106,6 +106,8 @@ function HomeContent() {
     const [savingAd, setSavingAd] = useState(false);
     const [filterUniqueUrls, setFilterUniqueUrls] = useState(false);
     const [filterEmptyCategory, setFilterEmptyCategory] = useState(false);
+    const [sortColumn, setSortColumn] = useState<string>('id');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const adsLimit = 50;
 
     // Update URL when ads browser state changes
@@ -174,7 +176,7 @@ function HomeContent() {
         }
     }, []);
 
-    const fetchAds = useCallback(async (country: string, date: string, page: number, uniqueUrls: boolean, emptyCategory: boolean) => {
+    const fetchAds = useCallback(async (country: string, date: string, page: number, uniqueUrls: boolean, emptyCategory: boolean, sortCol: string, sortDir: string) => {
         if (!country || !date) {
             setAds([]);
             setAdsTotal(0);
@@ -190,6 +192,8 @@ function HomeContent() {
                 offset: offset.toString(),
                 uniqueUrls: uniqueUrls.toString(),
                 emptyCategory: emptyCategory.toString(),
+                sortColumn: sortCol,
+                sortDirection: sortDir,
             });
             const res = await fetch(`/api/ads?${params}`);
             const data = await res.json();
@@ -270,9 +274,19 @@ function HomeContent() {
 
     useEffect(() => {
         if (selectedCountry && selectedDate) {
-            fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory);
+            fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, sortColumn, sortDirection);
         }
-    }, [selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, fetchAds]);
+    }, [selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, sortColumn, sortDirection, fetchAds]);
+
+    const handleSort = (column: string) => {
+        if (sortColumn === column) {
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortColumn(column);
+            setSortDirection('desc');
+        }
+        setAdsPage(0);
+    };
 
     const handleLogout = async () => {
         await fetch('/api/auth/logout', { method: 'POST' });
@@ -748,10 +762,16 @@ function HomeContent() {
                                         <table className="data-table ads-table">
                                             <thead>
                                                 <tr>
-                                                    <th>Category</th>
-                                                    <th>Title</th>
-                                                    <th>Ad Image</th>
-                                                    <th>Landing Page</th>
+                                                    <th className="sortable-header" onClick={() => handleSort('category')}>
+                                                        Category {sortColumn === 'category' && (sortDirection === 'asc' ? '↑' : '↓')}
+                                                    </th>
+                                                    <th className="sortable-header" onClick={() => handleSort('title')}>
+                                                        Title {sortColumn === 'title' && (sortDirection === 'asc' ? '↑' : '↓')}
+                                                    </th>
+                                                    <th>Image</th>
+                                                    <th className="sortable-header" onClick={() => handleSort('landing_page')}>
+                                                        Landing Page {sortColumn === 'landing_page' && (sortDirection === 'asc' ? '↑' : '↓')}
+                                                    </th>
                                                 </tr>
                                             </thead>
                                             <tbody>

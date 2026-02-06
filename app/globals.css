@@ -860,6 +860,16 @@ body {
     font-weight: 500;
 }
 
+.sortable-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s;
+}
+
+.sortable-header:hover {
+    background-color: #e9ecef;
+}
+
 .ads-table td {
     padding: 0.5rem 0.75rem;
 }

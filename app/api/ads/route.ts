@@ -10,6 +10,8 @@ export async function GET(request: Request) {
         const offset = parseInt(searchParams.get('offset') || '0');
         const uniqueUrls = searchParams.get('uniqueUrls') === 'true';
         const emptyCategory = searchParams.get('emptyCategory') === 'true';
+        const sortColumn = searchParams.get('sortColumn') || 'id';
+        const sortDirection = searchParams.get('sortDirection') || 'desc';
 
         if (!country || !date) {
             return NextResponse.json(
@@ -19,7 +21,8 @@ export async function GET(request: Request) {
         }
 
         const filters = { uniqueUrls, emptyCategory };
-        const result = await getAdsByCountryAndDate(country, date, limit, offset, filters);
+        const sort = { column: sortColumn, direction: sortDirection as 'asc' | 'desc' };
+        const result = await getAdsByCountryAndDate(country, date, limit, offset, filters, sort);
         return NextResponse.json(result);
     } catch (error) {
         console.error('Failed to fetch ads:', error);
