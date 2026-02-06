@@ -482,6 +482,15 @@ body {
     background: #e5e7eb;
 }
 
+.uninterested-action-btn {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+.uninterested-action-btn:hover {
+    background: #fecaca;
+}
+
 /* Pagination */
 .pagination {
     display: flex;

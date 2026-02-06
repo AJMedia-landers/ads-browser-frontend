@@ -397,6 +397,35 @@ function HomeContent() {
         });
     };
 
+    const handleMarkMappingUninterested = (mapping: UrlMapping) => {
+        setConfirmAction({
+            message: `Mark this URL as uninterested? This will delete ALL ads with this landing page and update the category to "Manual Uninterested".`,
+            onConfirm: async () => {
+                setConfirmAction(null);
+                setSaving(true);
+                setError('');
+                try {
+                    const res = await fetch('/api/ads/uninterested', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ landingPage: mapping.cleaned_url }),
+                    });
+
+                    if (!res.ok) throw new Error('Failed to mark as uninterested');
+
+                    const data = await res.json();
+                    setSuccess(`Marked as uninterested. ${data.rowsDeleted} ad records deleted.`);
+                    setTimeout(() => setSuccess(''), 5000);
+                    fetchMappings();
+                } catch {
+                    setError('Failed to mark as uninterested');
+                } finally {
+                    setSaving(false);
+                }
+            },
+        });
+    };
+
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -614,6 +643,13 @@ function HomeContent() {
                                                                     disabled={deleting === mapping.id}
                                                                 >
                                                                     {deleting === mapping.id ? 'Deleting...' : 'Delete'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleMarkMappingUninterested(mapping)}
+                                                                    className="action-btn uninterested-action-btn"
+                                                                    disabled={deleting === mapping.id}
+                                                                >
+                                                                    Uninterested
                                                                 </button>
                                                             </>
                                                         )}
