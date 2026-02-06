@@ -13,6 +13,9 @@ const pool = new Pool({
 
 export default pool;
 
+// Table name for scraping results (configurable via env)
+const SCRAPING_TABLE = process.env.SCRAPING_RESULTS_TABLE || '${SCRAPING_TABLE}';
+
 export interface UrlMapping {
     id: number;
     cleaned_url: string;
@@ -128,7 +131,7 @@ export async function createMapping(
         // First, find matching records to log them
         const previewQuery = `
             SELECT id, title, landing_page, category, type
-            FROM public.scraping_results_staging_clone
+            FROM public.${SCRAPING_TABLE}
             WHERE landing_page ILIKE $1
               AND type = 'ai_response'
             LIMIT 20`;
@@ -146,8 +149,8 @@ export async function createMapping(
             console.log(`     Landing Page: ${row.landing_page}`);
         });
 
-        // Update all related records in scraping_results_staging_clone where type = 'ai-response'
-        const updateQuery = `UPDATE public.scraping_results_staging_clone
+        // Update all related records in ${SCRAPING_TABLE} where type = 'ai-response'
+        const updateQuery = `UPDATE public.${SCRAPING_TABLE}
              SET category = $1, updated_at = NOW()
              WHERE landing_page ILIKE $2
                AND type = 'ai_response'`;
@@ -218,7 +221,7 @@ export async function updateMapping(
         // First, find matching records to log them
         const previewQuery = `
             SELECT id, title, landing_page, category, type
-            FROM public.scraping_results_staging_clone
+            FROM public.${SCRAPING_TABLE}
             WHERE landing_page ILIKE $1
               AND type = 'ai_response'
             LIMIT 20`;
@@ -239,8 +242,8 @@ export async function updateMapping(
             console.log(`     Landing Page: ${row.landing_page}`);
         });
 
-        // Update all related records in scraping_results_staging_clone where type = 'ai-response'
-        const updateQuery = `UPDATE public.scraping_results_staging_clone
+        // Update all related records in ${SCRAPING_TABLE} where type = 'ai-response'
+        const updateQuery = `UPDATE public.${SCRAPING_TABLE}
              SET category = $1, updated_at = NOW()
              WHERE landing_page ILIKE $2
                AND type = 'ai_response'`;
@@ -308,7 +311,7 @@ export interface Ad {
 export async function getDistinctDates(country: string): Promise<string[]> {
     const result = await pool.query(
         `SELECT DISTINCT DATE(date)::text as date_only
-         FROM scraping_results_staging_clone
+         FROM ${SCRAPING_TABLE}
          WHERE country = $1 AND date IS NOT NULL
          ORDER BY date_only DESC`,
         [country]
@@ -385,11 +388,11 @@ export async function getAdsByCountryAndDate(
     let countQuery: string;
     if (filters?.uniqueUrls) {
         countQuery = `SELECT COUNT(DISTINCT ${cleanedLandingPageExpr}) as total
-                      FROM scraping_results_staging_clone
+                      FROM ${SCRAPING_TABLE}
                       ${whereClause}`;
     } else {
         countQuery = `SELECT COUNT(*) as total
-                      FROM scraping_results_staging_clone
+                      FROM ${SCRAPING_TABLE}
                       ${whereClause}`;
     }
 
@@ -404,7 +407,7 @@ export async function getAdsByCountryAndDate(
             SELECT ${selectDistinct} id, country, date, title, ad_image_url, cdn_url, landing_page,
                 website, location, ad_network, device, occurrences, hour_of_day,
                 category, image_hash, type
-            FROM scraping_results_staging_clone
+            FROM ${SCRAPING_TABLE}
             ${whereClause}
             ${distinctOrderBy}
         ) sub
@@ -414,7 +417,7 @@ export async function getAdsByCountryAndDate(
         dataQuery = `SELECT id, country, date, title, ad_image_url, cdn_url, landing_page,
                 website, location, ad_network, device, occurrences, hour_of_day,
                 category, image_hash, type
-            FROM scraping_results_staging_clone
+            FROM ${SCRAPING_TABLE}
             ${whereClause}
             ORDER BY ${sortCol} ${sortDir}
             LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
@@ -469,9 +472,9 @@ export async function updateAdCategoryByLandingPage(
             mappingCreated = true;
         }
 
-        // Update all matching records in scraping_results_staging_clone
+        // Update all matching records in ${SCRAPING_TABLE}
         const result = await client.query(
-            `UPDATE scraping_results_staging_clone
+            `UPDATE ${SCRAPING_TABLE}
              SET category = $1, updated_at = NOW()
              WHERE landing_page ILIKE $2`,
             [category, matchPattern]
