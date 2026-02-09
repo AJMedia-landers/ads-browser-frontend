@@ -74,6 +74,17 @@ body {
     border-bottom-color: #3b82f6;
 }
 
+.nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.refresh-btn {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+}
+
 .logout-btn {
     padding: 0.35rem 0.75rem;
     background: none;

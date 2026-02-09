@@ -392,6 +392,29 @@ function HomeContent() {
         setAdsPage(0);
     };
 
+    const [refreshing, setRefreshing] = useState(false);
+
+    const handleForceRefresh = async () => {
+        setRefreshing(true);
+        try {
+            const res = await fetch('/api/cache/clear', { method: 'POST' });
+            if (!res.ok) throw new Error('Failed to clear cache');
+            setSuccess('Cache cleared. Refreshing data...');
+            setTimeout(() => setSuccess(''), 3000);
+            // Re-fetch current tab's data
+            if (activeTab === 'mappings') {
+                fetchMappings();
+            } else if (selectedCountry && selectedDate) {
+                fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+            }
+            fetchCategories();
+        } catch {
+            setError('Failed to clear cache');
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
     const handleLogout = async () => {
         await fetch('/api/auth/logout', { method: 'POST' });
         router.push('/login');
@@ -535,9 +558,19 @@ function HomeContent() {
                             Ads Browser
                         </button>
                     </div>
-                    <button className="logout-btn" onClick={handleLogout}>
-                        Logout
-                    </button>
+                    <div className="nav-actions">
+                        <button
+                            className="btn btn-secondary refresh-btn"
+                            onClick={handleForceRefresh}
+                            disabled={refreshing}
+                            title="Clear server cache and refresh data"
+                        >
+                            {refreshing ? 'Refreshing...' : 'Refresh'}
+                        </button>
+                        <button className="logout-btn" onClick={handleLogout}>
+                            Logout
+                        </button>
+                    </div>
                 </div>
             </nav>
 
