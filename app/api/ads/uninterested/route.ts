@@ -1,25 +1,27 @@
-import { NextResponse } from 'next/server';
-import { markAdUninterested } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
-export async function POST(request: Request) {
+const API = process.env.API_BASE_URL!;
+
+export async function POST(request: NextRequest) {
     try {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
         const body = await request.json();
-        const { landingPage } = body;
 
-        if (!landingPage) {
-            return NextResponse.json(
-                { error: 'Landing page is required' },
-                { status: 400 }
-            );
-        }
+        const res = await fetch(`${API}/api/url-mapping/ads/uninterested`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+        });
 
-        const result = await markAdUninterested(landingPage);
-        return NextResponse.json(result);
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Failed to mark ad as uninterested:', error);
-        return NextResponse.json(
-            { error: 'Failed to mark ad as uninterested' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to mark ad as uninterested' }, { status: 500 });
     }
 }

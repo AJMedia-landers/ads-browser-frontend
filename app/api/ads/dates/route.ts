@@ -1,25 +1,22 @@
-import { NextResponse } from 'next/server';
-import { getDistinctDates } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
-export async function GET(request: Request) {
+const API = process.env.API_BASE_URL!;
+
+export async function GET(request: NextRequest) {
     try {
-        const { searchParams } = new URL(request.url);
-        const country = searchParams.get('country');
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
+        const searchParams = request.nextUrl.searchParams;
 
-        if (!country) {
-            return NextResponse.json(
-                { error: 'Country parameter is required' },
-                { status: 400 }
-            );
-        }
+        const res = await fetch(`${API}/api/url-mapping/ads/dates?${searchParams}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-        const dates = await getDistinctDates(country);
-        return NextResponse.json(dates);
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Failed to fetch dates:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch dates' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch dates' }, { status: 500 });
     }
 }

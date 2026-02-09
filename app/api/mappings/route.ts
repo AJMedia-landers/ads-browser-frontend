@@ -1,50 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllMappings, createMapping } from '@/lib/db';
+import { cookies } from 'next/headers';
+
+const API = process.env.API_BASE_URL!;
 
 export async function GET(request: NextRequest) {
     try {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
         const searchParams = request.nextUrl.searchParams;
-        const search = searchParams.get('search') || undefined;
-        const limit = parseInt(searchParams.get('limit') || '50');
-        const offset = parseInt(searchParams.get('offset') || '0');
 
-        const { mappings, total } = await getAllMappings(search, limit, offset);
+        const res = await fetch(`${API}/api/url-mapping/mappings?${searchParams}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-        return NextResponse.json({ mappings, total });
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error fetching mappings:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch mappings' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch mappings' }, { status: 500 });
     }
 }
 
 export async function POST(request: NextRequest) {
     try {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
         const body = await request.json();
-        const { cleaned_url, category } = body;
 
-        if (!cleaned_url || !category) {
-            return NextResponse.json(
-                { error: 'cleaned_url and category are required' },
-                { status: 400 }
-            );
-        }
+        const res = await fetch(`${API}/api/url-mapping/mappings`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+        });
 
-        const { mapping, stagingRowsUpdated } = await createMapping(cleaned_url, category);
-        return NextResponse.json({ ...mapping, stagingRowsUpdated }, { status: 201 });
-    } catch (error: unknown) {
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
+    } catch (error) {
         console.error('Error creating mapping:', error);
-        if (error instanceof Error && error.message.includes('duplicate key')) {
-            return NextResponse.json(
-                { error: 'A mapping for this URL already exists' },
-                { status: 409 }
-            );
-        }
-        return NextResponse.json(
-            { error: 'Failed to create mapping' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to create mapping' }, { status: 500 });
     }
 }

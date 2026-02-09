@@ -1,89 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMappingById, updateMapping, deleteMapping } from '@/lib/db';
+import { cookies } from 'next/headers';
+
+const API = process.env.API_BASE_URL!;
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-export async function GET(
-    request: NextRequest,
-    { params }: RouteParams
-) {
+export async function GET(request: NextRequest, { params }: RouteParams) {
     try {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
         const { id } = await params;
-        const mapping = await getMappingById(parseInt(id));
 
-        if (!mapping) {
-            return NextResponse.json(
-                { error: 'Mapping not found' },
-                { status: 404 }
-            );
-        }
+        const res = await fetch(`${API}/api/url-mapping/mappings/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-        return NextResponse.json(mapping);
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error fetching mapping:', error);
-        return NextResponse.json(
-            { error: 'Failed to fetch mapping' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to fetch mapping' }, { status: 500 });
     }
 }
 
-export async function PUT(
-    request: NextRequest,
-    { params }: RouteParams
-) {
+export async function PUT(request: NextRequest, { params }: RouteParams) {
     try {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
         const { id } = await params;
         const body = await request.json();
-        const { category } = body;
 
-        if (!category) {
-            return NextResponse.json(
-                { error: 'category is required' },
-                { status: 400 }
-            );
-        }
+        const res = await fetch(`${API}/api/url-mapping/mappings/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+        });
 
-        const { mapping, stagingRowsUpdated } = await updateMapping(parseInt(id), category);
-
-        if (!mapping) {
-            return NextResponse.json(
-                { error: 'Mapping not found' },
-                { status: 404 }
-            );
-        }
-
-        return NextResponse.json({ ...mapping, stagingRowsUpdated });
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error updating mapping:', error);
-        return NextResponse.json(
-            { error: 'Failed to update mapping' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to update mapping' }, { status: 500 });
     }
 }
 
-export async function DELETE(
-    request: NextRequest,
-    { params }: RouteParams
-) {
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
     try {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
         const { id } = await params;
-        const deleted = await deleteMapping(parseInt(id));
 
-        if (!deleted) {
-            return NextResponse.json(
-                { error: 'Mapping not found' },
-                { status: 404 }
-            );
-        }
+        const res = await fetch(`${API}/api/url-mapping/mappings/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+        });
 
-        return NextResponse.json({ success: true });
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Error deleting mapping:', error);
-        return NextResponse.json(
-            { error: 'Failed to delete mapping' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to delete mapping' }, { status: 500 });
     }
 }

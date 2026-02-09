@@ -1,25 +1,27 @@
-import { NextResponse } from 'next/server';
-import { updateAdCategoryByLandingPage } from '@/lib/db';
+import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
-export async function PUT(request: Request) {
+const API = process.env.API_BASE_URL!;
+
+export async function PUT(request: NextRequest) {
     try {
+        const cookieStore = await cookies();
+        const token = cookieStore.get('token')?.value;
         const body = await request.json();
-        const { landingPage, category } = body;
 
-        if (!landingPage || !category) {
-            return NextResponse.json(
-                { error: 'Landing page and category are required' },
-                { status: 400 }
-            );
-        }
+        const res = await fetch(`${API}/api/url-mapping/ads/category`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(body),
+        });
 
-        const result = await updateAdCategoryByLandingPage(landingPage, category);
-        return NextResponse.json(result);
+        const data = await res.json();
+        return NextResponse.json(data, { status: res.status });
     } catch (error) {
         console.error('Failed to update ad category:', error);
-        return NextResponse.json(
-            { error: 'Failed to update ad category' },
-            { status: 500 }
-        );
+        return NextResponse.json({ error: 'Failed to update ad category' }, { status: 500 });
     }
 }
