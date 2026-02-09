@@ -1,7 +1,32 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+
+function useDebounce<T>(value: T, delay: number): T {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+    const firstRender = useRef(true);
+    useEffect(() => {
+        if (firstRender.current) {
+            firstRender.current = false;
+            return;
+        }
+        const timer = setTimeout(() => setDebouncedValue(value), delay);
+        return () => clearTimeout(timer);
+    }, [value, delay]);
+    return debouncedValue;
+}
+
+function highlightMatch(text: string, query: string): React.ReactNode {
+    if (!query || !text) return text || '';
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(regex);
+    if (parts.length === 1) return text;
+    return parts.map((part, i) =>
+        regex.test(part) ? <mark key={i} className="search-highlight">{part}</mark> : part
+    );
+}
 
 const COUNTRIES = ['AU', 'UK', 'USA'] as const;
 
@@ -106,6 +131,13 @@ function HomeContent() {
     const [savingAd, setSavingAd] = useState(false);
     const [filterUniqueUrls, setFilterUniqueUrls] = useState(false);
     const [filterEmptyCategory, setFilterEmptyCategory] = useState(false);
+    const [filterAiMappingOnly, setFilterAiMappingOnly] = useState(false);
+    const [searchCategory, setSearchCategory] = useState('');
+    const [searchTitle, setSearchTitle] = useState('');
+    const [searchLandingPage, setSearchLandingPage] = useState('');
+    const debouncedSearchCategory = useDebounce(searchCategory, 400);
+    const debouncedSearchTitle = useDebounce(searchTitle, 400);
+    const debouncedSearchLandingPage = useDebounce(searchLandingPage, 400);
     const [sortColumn, setSortColumn] = useState<string>('id');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
@@ -178,7 +210,12 @@ function HomeContent() {
         }
     }, []);
 
-    const fetchAds = useCallback(async (country: string, date: string, page: number, uniqueUrls: boolean, emptyCategory: boolean, sortCol: string, sortDir: string) => {
+    const fetchAds = useCallback(async (
+        country: string, date: string, page: number,
+        uniqueUrls: boolean, emptyCategory: boolean, aiMappingOnly: boolean,
+        sCat: string, sTitle: string, sLanding: string,
+        sortCol: string, sortDir: string
+    ) => {
         if (!country || !date) {
             setAds([]);
             setAdsTotal(0);
@@ -194,9 +231,13 @@ function HomeContent() {
                 offset: offset.toString(),
                 uniqueUrls: uniqueUrls.toString(),
                 emptyCategory: emptyCategory.toString(),
+                aiMappingOnly: aiMappingOnly.toString(),
                 sortColumn: sortCol,
                 sortDirection: sortDir,
             });
+            if (sCat) params.set('searchCategory', sCat);
+            if (sTitle) params.set('searchTitle', sTitle);
+            if (sLanding) params.set('searchLandingPage', sLanding);
             const res = await fetch(`/api/ads?${params}`);
             const data = await res.json();
             setAds(data.ads || []);
@@ -313,9 +354,9 @@ function HomeContent() {
 
     useEffect(() => {
         if (selectedCountry && selectedDate) {
-            fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, sortColumn, sortDirection);
+            fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
         }
-    }, [selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, sortColumn, sortDirection, fetchAds]);
+    }, [selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
 
     const handleSort = (column: string) => {
         if (sortColumn === column) {
@@ -827,6 +868,50 @@ function HomeContent() {
                                         />
                                         Empty/unknown categories
                                     </label>
+                                    <label className="checkbox-label">
+                                        <input
+                                            type="checkbox"
+                                            checked={filterAiMappingOnly}
+                                            onChange={(e) => {
+                                                setFilterAiMappingOnly(e.target.checked);
+                                                setAdsPage(0);
+                                            }}
+                                        />
+                                        AI mapping only
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="search-controls">
+                                <div className="search-field">
+                                    <label htmlFor="search-category">Category</label>
+                                    <input
+                                        id="search-category"
+                                        type="text"
+                                        value={searchCategory}
+                                        onChange={(e) => { setSearchCategory(e.target.value); setAdsPage(0); }}
+                                        placeholder="Search category..."
+                                    />
+                                </div>
+                                <div className="search-field">
+                                    <label htmlFor="search-title">Title</label>
+                                    <input
+                                        id="search-title"
+                                        type="text"
+                                        value={searchTitle}
+                                        onChange={(e) => { setSearchTitle(e.target.value); setAdsPage(0); }}
+                                        placeholder="Search title..."
+                                    />
+                                </div>
+                                <div className="search-field">
+                                    <label htmlFor="search-landing">Landing Page</label>
+                                    <input
+                                        id="search-landing"
+                                        type="text"
+                                        value={searchLandingPage}
+                                        onChange={(e) => { setSearchLandingPage(e.target.value); setAdsPage(0); }}
+                                        placeholder="Search landing page..."
+                                    />
                                 </div>
                             </div>
 
@@ -891,7 +976,7 @@ function HomeContent() {
                                                                         onClick={() => handleEditAd(ad)}
                                                                         title="Click to edit category"
                                                                     >
-                                                                        {ad.category || 'Uncategorized'}
+                                                                        {highlightMatch(ad.category || 'Uncategorized', debouncedSearchCategory)}
                                                                     </span>
                                                                     <div className="ads-type-row">
                                                                         {ad.type && (
@@ -908,7 +993,7 @@ function HomeContent() {
                                                             )}
                                                         </td>
                                                         <td className="ads-title-cell">
-                                                            {ad.title || 'Untitled'}
+                                                            {highlightMatch(ad.title || 'Untitled', debouncedSearchTitle)}
                                                         </td>
                                                         <td className="ads-image-cell">
                                                             {ad.cdn_url || ad.ad_image_url ? (
@@ -943,7 +1028,7 @@ function HomeContent() {
                                                                 className="url-link"
                                                                 title={ad.landing_page}
                                                             >
-                                                                {ad.landing_page}
+                                                                {highlightMatch(ad.landing_page, debouncedSearchLandingPage)}
                                                             </a>
                                                         </td>
                                                     </tr>
