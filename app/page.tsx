@@ -92,18 +92,26 @@ function HomeContent() {
     const searchParams = useSearchParams();
 
     // Initialize state from URL params
-    const initialTab = searchParams.get('tab') === 'ads' ? 'ads' : 'mappings';
+    const initialTab = searchParams.get('tab') === 'mappings' ? 'mappings' : 'ads';
     const initialCountry = searchParams.get('country') || '';
     const initialDate = searchParams.get('date') || '';
     const initialAdsPage = parseInt(searchParams.get('adsPage') || '0');
+    const initialMappingsPage = parseInt(searchParams.get('mappingsPage') || '0');
+    const initialMappingSearchUrl = searchParams.get('searchUrl') || '';
+    const initialMappingSearchCategory = searchParams.get('searchCategory') || '';
+    const initialMappingSortColumn = searchParams.get('mappingsSortCol') || 'created_at';
+    const initialMappingSortDirection = (searchParams.get('mappingsSortDir') || 'desc') as 'asc' | 'desc';
 
     const [activeTab, setActiveTab] = useState<'mappings' | 'ads'>(initialTab);
     const [mappings, setMappings] = useState<UrlMapping[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
-    const [page, setPage] = useState(0);
+    const [mappingSearchUrl, setMappingSearchUrl] = useState(initialMappingSearchUrl);
+    const [mappingSearchCategory, setMappingSearchCategory] = useState(initialMappingSearchCategory);
+    const debouncedMappingSearchUrl = useDebounce(mappingSearchUrl, 400);
+    const debouncedMappingSearchCategory = useDebounce(mappingSearchCategory, 400);
+    const [page, setPage] = useState(initialMappingsPage);
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editCategory, setEditCategory] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -115,6 +123,8 @@ function HomeContent() {
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState<number | null>(null);
     const [adding, setAdding] = useState(false);
+    const [mappingSortColumn, setMappingSortColumn] = useState<string>(initialMappingSortColumn);
+    const [mappingSortDirection, setMappingSortDirection] = useState<'asc' | 'desc'>(initialMappingSortDirection);
     const limit = 20;
 
     // Ads Browser state
@@ -143,23 +153,24 @@ function HomeContent() {
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
     const adsLimit = 50;
 
-    // Update URL when ads browser state changes
-    const updateUrl = useCallback((tab: string, country: string, date: string, page: number) => {
+    // Sync state to URL params
+    useEffect(() => {
         const params = new URLSearchParams();
-        if (tab === 'ads') {
-            params.set('tab', 'ads');
-            if (country) params.set('country', country);
-            if (date) params.set('date', date);
-            if (page > 0) params.set('adsPage', page.toString());
+        if (activeTab === 'mappings') {
+            params.set('tab', 'mappings');
+            if (page > 0) params.set('mappingsPage', page.toString());
+            if (debouncedMappingSearchUrl) params.set('searchUrl', debouncedMappingSearchUrl);
+            if (debouncedMappingSearchCategory) params.set('searchCategory', debouncedMappingSearchCategory);
+            if (mappingSortColumn !== 'created_at') params.set('mappingsSortCol', mappingSortColumn);
+            if (mappingSortDirection !== 'desc') params.set('mappingsSortDir', mappingSortDirection);
+        } else {
+            if (selectedCountry) params.set('country', selectedCountry);
+            if (selectedDate) params.set('date', selectedDate);
+            if (adsPage > 0) params.set('adsPage', adsPage.toString());
         }
         const newUrl = params.toString() ? `?${params.toString()}` : '/';
         router.replace(newUrl, { scroll: false });
-    }, [router]);
-
-    // Sync URL when state changes
-    useEffect(() => {
-        updateUrl(activeTab, selectedCountry, selectedDate, adsPage);
-    }, [activeTab, selectedCountry, selectedDate, adsPage, updateUrl]);
+    }, [activeTab, selectedCountry, selectedDate, adsPage, page, debouncedMappingSearchUrl, debouncedMappingSearchCategory, mappingSortColumn, mappingSortDirection, router]);
 
     const fetchMappings = useCallback(async () => {
         setLoading(true);
@@ -167,8 +178,11 @@ function HomeContent() {
             const params = new URLSearchParams({
                 limit: limit.toString(),
                 offset: (page * limit).toString(),
+                sortColumn: mappingSortColumn,
+                sortDirection: mappingSortDirection,
             });
-            if (search) params.set('search', search);
+            if (debouncedMappingSearchUrl) params.set('searchUrl', debouncedMappingSearchUrl);
+            if (debouncedMappingSearchCategory) params.set('searchCategory', debouncedMappingSearchCategory);
 
             const res = await fetch(`/api/mappings?${params}`);
             const data = await res.json();
@@ -179,7 +193,7 @@ function HomeContent() {
         } finally {
             setLoading(false);
         }
-    }, [page, search]);
+    }, [page, debouncedMappingSearchUrl, debouncedMappingSearchCategory, mappingSortColumn, mappingSortDirection]);
 
     const fetchCategories = async () => {
         try {
@@ -358,6 +372,16 @@ function HomeContent() {
         }
     }, [selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
 
+    const handleMappingSort = (column: string) => {
+        if (mappingSortColumn === column) {
+            setMappingSortDirection(mappingSortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setMappingSortColumn(column);
+            setMappingSortDirection('desc');
+        }
+        setPage(0);
+    };
+
     const handleSort = (column: string) => {
         if (sortColumn === column) {
             setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -372,17 +396,6 @@ function HomeContent() {
         await fetch('/api/auth/logout', { method: 'POST' });
         router.push('/login');
         router.refresh();
-    };
-
-    const handleSearch = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (page === 0) {
-            // Already on page 0, manually trigger fetch
-            fetchMappings();
-        } else {
-            // Reset to page 0, useEffect will trigger fetch
-            setPage(0);
-        }
     };
 
     const handleEdit = (mapping: UrlMapping) => {
@@ -560,28 +573,46 @@ function HomeContent() {
                                 </button>
                             </div>
 
-                            <form onSubmit={handleSearch} className="search-section">
-                                <div className="search-box">
+                            <div className="search-controls">
+                                <div className="search-field">
+                                    <label htmlFor="mapping-search-url">URL</label>
                                     <input
+                                        id="mapping-search-url"
                                         type="text"
-                                        value={search}
-                                        onChange={(e) => setSearch(e.target.value)}
-                                        placeholder="Search by URL or category..."
+                                        value={mappingSearchUrl}
+                                        onChange={(e) => { setMappingSearchUrl(e.target.value); setPage(0); }}
+                                        placeholder="Search by URL..."
                                     />
                                 </div>
-                                <button type="submit" className="btn btn-secondary">
-                                    Search
-                                </button>
-                            </form>
+                                <div className="search-field">
+                                    <label htmlFor="mapping-search-category">Category</label>
+                                    <input
+                                        id="mapping-search-category"
+                                        type="text"
+                                        value={mappingSearchCategory}
+                                        onChange={(e) => { setMappingSearchCategory(e.target.value); setPage(0); }}
+                                        placeholder="Search by category..."
+                                        list="categories"
+                                    />
+                                </div>
+                            </div>
 
                             <div className="table-container">
                                 <table className="data-table">
                                     <thead>
                                         <tr>
-                                            <th>ID</th>
-                                            <th>Cleaned URL</th>
-                                            <th>Category</th>
-                                            <th>Created</th>
+                                            <th className="sortable-header" onClick={() => handleMappingSort('id')}>
+                                                ID {mappingSortColumn === 'id' && (mappingSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th className="sortable-header" onClick={() => handleMappingSort('cleaned_url')}>
+                                                Cleaned URL {mappingSortColumn === 'cleaned_url' && (mappingSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th className="sortable-header" onClick={() => handleMappingSort('category')}>
+                                                Category {mappingSortColumn === 'category' && (mappingSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th className="sortable-header" onClick={() => handleMappingSort('created_at')}>
+                                                Created {mappingSortColumn === 'created_at' && (mappingSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
@@ -615,7 +646,7 @@ function HomeContent() {
                                                                 className="url-link"
                                                                 title={mapping.cleaned_url}
                                                             >
-                                                                {mapping.cleaned_url}
+                                                                {highlightMatch(mapping.cleaned_url, debouncedMappingSearchUrl)}
                                                             </a>
                                                             <button
                                                                 className="open-url-btn"
@@ -644,7 +675,7 @@ function HomeContent() {
                                                             />
                                                         ) : (
                                                             <span className="category-badge">
-                                                                {mapping.category}
+                                                                {highlightMatch(mapping.category, debouncedMappingSearchCategory)}
                                                             </span>
                                                         )}
                                                     </td>
@@ -726,12 +757,6 @@ function HomeContent() {
                                     </div>
                                 </div>
                             </div>
-
-                            <datalist id="categories">
-                                {categories.map((cat) => (
-                                    <option key={cat} value={cat} />
-                                ))}
-                            </datalist>
 
                             {showAddModal && (
                                 <div className="modal-overlay">
@@ -891,6 +916,7 @@ function HomeContent() {
                                         value={searchCategory}
                                         onChange={(e) => { setSearchCategory(e.target.value); setAdsPage(0); }}
                                         placeholder="Search category..."
+                                        list="categories"
                                     />
                                 </div>
                                 <div className="search-field">
@@ -1073,6 +1099,12 @@ function HomeContent() {
                             )}
                         </>
                     )}
+
+                    <datalist id="categories">
+                        {categories.map((cat) => (
+                            <option key={cat} value={cat} />
+                        ))}
+                    </datalist>
                 </div>
             </main>
 
