@@ -92,7 +92,8 @@ function HomeContent() {
     const searchParams = useSearchParams();
 
     // Initialize state from URL params
-    const initialTab = searchParams.get('tab') === 'mappings' ? 'mappings' : 'ads';
+    const tabParam = searchParams.get('tab');
+    const initialTab: 'mappings' | 'ads' | 'categories' = tabParam === 'mappings' ? 'mappings' : tabParam === 'categories' ? 'categories' : 'ads';
     const initialCountry = searchParams.get('country') || '';
     const initialDate = searchParams.get('date') || '';
     const initialAdsPage = parseInt(searchParams.get('adsPage') || '0');
@@ -102,7 +103,7 @@ function HomeContent() {
     const initialMappingSortColumn = searchParams.get('mappingsSortCol') || 'created_at';
     const initialMappingSortDirection = (searchParams.get('mappingsSortDir') || 'desc') as 'asc' | 'desc';
 
-    const [activeTab, setActiveTab] = useState<'mappings' | 'ads'>(initialTab);
+    const [activeTab, setActiveTab] = useState<'mappings' | 'ads' | 'categories'>(initialTab);
     const [mappings, setMappings] = useState<UrlMapping[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [total, setTotal] = useState(0);
@@ -153,6 +154,21 @@ function HomeContent() {
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
     const adsLimit = 50;
 
+    // Categories Dedup state
+    interface CategoryWithCounts {
+        category: string;
+        mapping_count: number;
+        ad_count: number;
+    }
+    const [allCategories, setAllCategories] = useState<CategoryWithCounts[]>([]);
+    const [loadingAllCategories, setLoadingAllCategories] = useState(false);
+    const [categorySearch, setCategorySearch] = useState('');
+    const [selectedSourceCategory, setSelectedSourceCategory] = useState<string | null>(null);
+    const [mergeTarget, setMergeTarget] = useState('');
+    const [merging, setMerging] = useState(false);
+    const [categorySortColumn, setCategorySortColumn] = useState<'category' | 'mapping_count' | 'ad_count'>('category');
+    const [categorySortDirection, setCategorySortDirection] = useState<'asc' | 'desc'>('asc');
+
     // Sync state to URL params
     useEffect(() => {
         const params = new URLSearchParams();
@@ -163,6 +179,8 @@ function HomeContent() {
             if (debouncedMappingSearchCategory) params.set('searchCategory', debouncedMappingSearchCategory);
             if (mappingSortColumn !== 'created_at') params.set('mappingsSortCol', mappingSortColumn);
             if (mappingSortDirection !== 'desc') params.set('mappingsSortDir', mappingSortDirection);
+        } else if (activeTab === 'categories') {
+            params.set('tab', 'categories');
         } else {
             if (selectedCountry) params.set('country', selectedCountry);
             if (selectedDate) params.set('date', selectedDate);
@@ -404,6 +422,8 @@ function HomeContent() {
             // Re-fetch current tab's data
             if (activeTab === 'mappings') {
                 fetchMappings();
+            } else if (activeTab === 'categories') {
+                fetchAllCategories();
             } else if (selectedCountry && selectedDate) {
                 fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
             }
@@ -503,6 +523,84 @@ function HomeContent() {
         });
     };
 
+    const fetchAllCategories = useCallback(async () => {
+        setLoadingAllCategories(true);
+        try {
+            const res = await fetch('/api/categories/all');
+            const data = await res.json();
+            setAllCategories(Array.isArray(data) ? data : []);
+        } catch {
+            setError('Failed to fetch categories');
+        } finally {
+            setLoadingAllCategories(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (activeTab === 'categories') {
+            fetchAllCategories();
+        }
+    }, [activeTab, fetchAllCategories]);
+
+    const handleMergeCategory = () => {
+        if (!selectedSourceCategory || !mergeTarget.trim()) return;
+        if (selectedSourceCategory === mergeTarget.trim()) {
+            setError('Source and target categories must be different');
+            return;
+        }
+        setConfirmAction({
+            message: `Merge "${selectedSourceCategory}" into "${mergeTarget.trim()}"? All records will be updated to use the target category name.`,
+            onConfirm: async () => {
+                setConfirmAction(null);
+                setMerging(true);
+                setError('');
+                try {
+                    const res = await fetch('/api/categories/rename', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            oldCategory: selectedSourceCategory,
+                            newCategory: mergeTarget.trim(),
+                        }),
+                    });
+
+                    if (!res.ok) throw new Error('Failed to merge');
+
+                    const data = await res.json();
+                    setSuccess(`Merged! ${data.mappingsUpdated} mappings and ${data.adsUpdated} ads updated.`);
+                    setTimeout(() => setSuccess(''), 5000);
+                    setSelectedSourceCategory(null);
+                    setMergeTarget('');
+                    fetchAllCategories();
+                    fetchCategories();
+                } catch {
+                    setError('Failed to merge categories');
+                } finally {
+                    setMerging(false);
+                }
+            },
+        });
+    };
+
+    const handleCategorySort = (column: 'category' | 'mapping_count' | 'ad_count') => {
+        if (categorySortColumn === column) {
+            setCategorySortDirection(categorySortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setCategorySortColumn(column);
+            setCategorySortDirection(column === 'category' ? 'asc' : 'desc');
+        }
+    };
+
+    const filteredAllCategories = allCategories
+        .filter((c) => c.category.toLowerCase().includes(categorySearch.toLowerCase()))
+        .sort((a, b) => {
+            const dir = categorySortDirection === 'asc' ? 1 : -1;
+            if (categorySortColumn === 'category') {
+                return dir * a.category.localeCompare(b.category);
+            }
+            return dir * (a[categorySortColumn] - b[categorySortColumn]);
+        });
+
     const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -546,26 +644,32 @@ function HomeContent() {
                 <div className="nav-inner">
                     <div className="nav-tabs">
                         <button
+                            className={`nav-tab ${activeTab === 'ads' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('ads')}
+                        >
+                            Ads Browser
+                        </button>
+                        <button
                             className={`nav-tab ${activeTab === 'mappings' ? 'active' : ''}`}
                             onClick={() => setActiveTab('mappings')}
                         >
                             URL Mappings
                         </button>
                         <button
-                            className={`nav-tab ${activeTab === 'ads' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('ads')}
+                            className={`nav-tab ${activeTab === 'categories' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('categories')}
                         >
-                            Ads Browser
+                            Categories
                         </button>
                     </div>
                     <div className="nav-actions">
                         <button
-                            className="btn btn-secondary refresh-btn"
+                            className="logout-btn"
                             onClick={handleForceRefresh}
                             disabled={refreshing}
-                            title="Clear server cache and refresh data"
+                            title="Clear server cache and reload data"
                         >
-                            {refreshing ? 'Refreshing...' : 'Refresh'}
+                            {refreshing ? 'Reloading...' : 'Reload Data'}
                         </button>
                         <button className="logout-btn" onClick={handleLogout}>
                             Logout
@@ -594,7 +698,109 @@ function HomeContent() {
                         </div>
                     )}
 
-                    {activeTab === 'mappings' ? (
+                    {activeTab === 'categories' ? (
+                        <>
+                            <div className="admin-header">
+                                <h1>Category Deduplication</h1>
+                            </div>
+
+                            <div className="search-controls">
+                                <div className="search-field">
+                                    <label htmlFor="category-search">Search categories</label>
+                                    <input
+                                        id="category-search"
+                                        type="text"
+                                        value={categorySearch}
+                                        onChange={(e) => setCategorySearch(e.target.value)}
+                                        placeholder="Filter categories..."
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="dedup-layout">
+                                <div className="dedup-list">
+                                    <div className="dedup-list-header">
+                                        <span className="sortable-header" onClick={() => handleCategorySort('category')}>
+                                            Category ({filteredAllCategories.length}) {categorySortColumn === 'category' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                        </span>
+                                        <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('mapping_count')}>
+                                            Mappings {categorySortColumn === 'mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                        </span>
+                                        <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('ad_count')}>
+                                            Ads {categorySortColumn === 'ad_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                        </span>
+                                    </div>
+                                    {loadingAllCategories ? (
+                                        <div className="ads-loading">
+                                            <div className="loading-spinner"></div>
+                                            <p>Loading categories...</p>
+                                        </div>
+                                    ) : filteredAllCategories.length === 0 ? (
+                                        <div className="ads-empty">No categories found.</div>
+                                    ) : (
+                                        <div className="dedup-list-body">
+                                            {filteredAllCategories.map((cat) => (
+                                                <div
+                                                    key={cat.category}
+                                                    className={`dedup-row ${selectedSourceCategory === cat.category ? 'selected' : ''}`}
+                                                    onClick={() => {
+                                                        setSelectedSourceCategory(
+                                                            selectedSourceCategory === cat.category ? null : cat.category
+                                                        );
+                                                        setMergeTarget('');
+                                                    }}
+                                                >
+                                                    <span className="dedup-row-name">{highlightMatch(cat.category, categorySearch)}</span>
+                                                    <span className="dedup-row-count">{cat.mapping_count}</span>
+                                                    <span className="dedup-row-count">{cat.ad_count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="dedup-merge-panel">
+                                    {selectedSourceCategory ? (
+                                        <>
+                                            <h3>Merge Category</h3>
+                                            <div className="dedup-merge-source">
+                                                <label>Source (will be renamed)</label>
+                                                <div className="dedup-source-value">{selectedSourceCategory}</div>
+                                            </div>
+                                            <div className="dedup-merge-target">
+                                                <label htmlFor="merge-target">Target (new name)</label>
+                                                <input
+                                                    id="merge-target"
+                                                    type="text"
+                                                    value={mergeTarget}
+                                                    onChange={(e) => setMergeTarget(e.target.value)}
+                                                    placeholder="Type or select target category..."
+                                                    list="all-categories-list"
+                                                />
+                                            </div>
+                                            <button
+                                                className="btn btn-primary"
+                                                onClick={handleMergeCategory}
+                                                disabled={!mergeTarget.trim() || merging}
+                                            >
+                                                {merging ? 'Merging...' : 'Merge'}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div className="dedup-merge-empty">
+                                            Select a category from the list to merge it into another.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <datalist id="all-categories-list">
+                                {allCategories.map((cat) => (
+                                    <option key={cat.category} value={cat.category} />
+                                ))}
+                            </datalist>
+                        </>
+                    ) : activeTab === 'mappings' ? (
                         <>
                             <div className="admin-header">
                                 <h1>URL Mapping Admin</h1>
@@ -1165,10 +1371,10 @@ function HomeContent() {
             )}
 
             {/* Loading overlay */}
-            {(saving || adding || savingAd) && (
+            {(saving || adding || savingAd || merging) && (
                 <div className="loading-overlay">
                     <div className="loading-spinner"></div>
-                    <p>{saving ? 'Updating records...' : adding ? 'Creating mapping...' : 'Updating ad category...'}</p>
+                    <p>{saving ? 'Updating records...' : adding ? 'Creating mapping...' : merging ? 'Merging categories...' : 'Updating ad category...'}</p>
                 </div>
             )}
         </div>
