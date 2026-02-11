@@ -1125,6 +1125,15 @@ body {
     color: #3b82f6;
 }
 
+/* Count tags */
+.count-tag {
+    display: block;
+    font-size: 0.6rem;
+    color: #9ca3af;
+    margin-top: 0.15rem;
+    font-weight: 400;
+}
+
 .ads-loading {
     display: flex;
     flex-direction: column;

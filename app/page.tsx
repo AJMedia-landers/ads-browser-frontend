@@ -85,6 +85,9 @@ interface Ad {
     category: string;
     image_hash: string;
     type: string;
+    url_count: number;
+    category_count: number;
+    title_count: number;
 }
 
 function HomeContent() {
@@ -1240,11 +1243,17 @@ function HomeContent() {
                                                                             Uninterested
                                                                         </button>
                                                                     </div>
+                                                                    {ad.category_count > 1 && (
+                                                                        <span className="count-tag">{ad.category_count} ads in this category</span>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                         </td>
                                                         <td className="ads-title-cell">
-                                                            {highlightMatch(ad.title || 'Untitled', debouncedSearchTitle)}
+                                                            <div>{highlightMatch(ad.title || 'Untitled', debouncedSearchTitle)}</div>
+                                                            {ad.title_count > 1 && (
+                                                                <span className="count-tag">{ad.title_count} ads with this title</span>
+                                                            )}
                                                         </td>
                                                         <td className="ads-image-cell">
                                                             {ad.cdn_url || ad.ad_image_url ? (
@@ -1281,6 +1290,9 @@ function HomeContent() {
                                                             >
                                                                 {highlightMatch(ad.landing_page, debouncedSearchLandingPage)}
                                                             </a>
+                                                            {ad.url_count > 1 && (
+                                                                <span className="count-tag">{ad.url_count} ads with this URL</span>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 ))}
