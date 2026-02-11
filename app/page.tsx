@@ -95,7 +95,8 @@ function HomeContent() {
     const tabParam = searchParams.get('tab');
     const initialTab: 'mappings' | 'ads' | 'categories' = tabParam === 'mappings' ? 'mappings' : tabParam === 'categories' ? 'categories' : 'ads';
     const initialCountry = searchParams.get('country') || '';
-    const initialDate = searchParams.get('date') || '';
+    const initialStartDate = searchParams.get('startDate') || '';
+    const initialEndDate = searchParams.get('endDate') || '';
     const initialAdsPage = parseInt(searchParams.get('adsPage') || '0');
     const initialMappingsPage = parseInt(searchParams.get('mappingsPage') || '0');
     const initialMappingSearchUrl = searchParams.get('searchUrl') || '';
@@ -129,13 +130,12 @@ function HomeContent() {
     const limit = 20;
 
     // Ads Browser state
-    const [dates, setDates] = useState<string[]>([]);
     const [ads, setAds] = useState<Ad[]>([]);
     const [adsTotal, setAdsTotal] = useState(0);
     const [selectedCountry, setSelectedCountry] = useState(initialCountry);
-    const [selectedDate, setSelectedDate] = useState(initialDate);
+    const [startDate, setStartDate] = useState(initialStartDate);
+    const [endDate, setEndDate] = useState(initialEndDate);
     const [adsPage, setAdsPage] = useState(initialAdsPage);
-    const [loadingDates, setLoadingDates] = useState(false);
     const [loadingAds, setLoadingAds] = useState(false);
     const [editingAdId, setEditingAdId] = useState<number | null>(null);
     const [editAdCategory, setEditAdCategory] = useState('');
@@ -183,12 +183,13 @@ function HomeContent() {
             params.set('tab', 'categories');
         } else {
             if (selectedCountry) params.set('country', selectedCountry);
-            if (selectedDate) params.set('date', selectedDate);
+            if (startDate) params.set('startDate', startDate);
+            if (endDate) params.set('endDate', endDate);
             if (adsPage > 0) params.set('adsPage', adsPage.toString());
         }
         const newUrl = params.toString() ? `?${params.toString()}` : '/';
         router.replace(newUrl, { scroll: false });
-    }, [activeTab, selectedCountry, selectedDate, adsPage, page, debouncedMappingSearchUrl, debouncedMappingSearchCategory, mappingSortColumn, mappingSortDirection, router]);
+    }, [activeTab, selectedCountry, startDate, endDate, adsPage, page, debouncedMappingSearchUrl, debouncedMappingSearchCategory, mappingSortColumn, mappingSortDirection, router]);
 
     const fetchMappings = useCallback(async () => {
         setLoading(true);
@@ -223,32 +224,13 @@ function HomeContent() {
         }
     };
 
-    const fetchDates = useCallback(async (country: string) => {
-        if (!country) {
-            setDates([]);
-            return;
-        }
-        setLoadingDates(true);
-        try {
-            const res = await fetch(`/api/ads/dates?country=${encodeURIComponent(country)}`);
-            const data = await res.json();
-            // Dates come as "YYYY-MM-DD" from PostgreSQL
-            setDates(Array.isArray(data) ? data : []);
-        } catch {
-            setError('Failed to fetch dates');
-            setDates([]);
-        } finally {
-            setLoadingDates(false);
-        }
-    }, []);
-
     const fetchAds = useCallback(async (
-        country: string, date: string, page: number,
+        country: string, sDate: string, eDate: string, page: number,
         uniqueUrls: boolean, emptyCategory: boolean, aiMappingOnly: boolean,
         sCat: string, sTitle: string, sLanding: string,
         sortCol: string, sortDir: string
     ) => {
-        if (!country || !date) {
+        if (!country || !sDate) {
             setAds([]);
             setAdsTotal(0);
             return;
@@ -258,7 +240,7 @@ function HomeContent() {
             const offset = page * adsLimit;
             const params = new URLSearchParams({
                 country,
-                date,
+                date: sDate,
                 limit: adsLimit.toString(),
                 offset: offset.toString(),
                 uniqueUrls: uniqueUrls.toString(),
@@ -267,6 +249,7 @@ function HomeContent() {
                 sortColumn: sortCol,
                 sortDirection: sortDir,
             });
+            if (eDate) params.set('endDate', eDate);
             if (sCat) params.set('searchCategory', sCat);
             if (sTitle) params.set('searchTitle', sTitle);
             if (sLanding) params.set('searchLandingPage', sLanding);
@@ -379,16 +362,10 @@ function HomeContent() {
     }, []);
 
     useEffect(() => {
-        if (selectedCountry) {
-            fetchDates(selectedCountry);
+        if (selectedCountry && startDate) {
+            fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
         }
-    }, [selectedCountry, fetchDates]);
-
-    useEffect(() => {
-        if (selectedCountry && selectedDate) {
-            fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
-        }
-    }, [selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
+    }, [selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
 
     const handleMappingSort = (column: string) => {
         if (mappingSortColumn === column) {
@@ -424,8 +401,8 @@ function HomeContent() {
                 fetchMappings();
             } else if (activeTab === 'categories') {
                 fetchAllCategories();
-            } else if (selectedCountry && selectedDate) {
-                fetchAds(selectedCountry, selectedDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+            } else if (selectedCountry && startDate) {
+                fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
             }
             fetchCategories();
         } catch {
@@ -1073,7 +1050,8 @@ function HomeContent() {
                                         value={selectedCountry}
                                         onChange={(e) => {
                                             setSelectedCountry(e.target.value);
-                                            setSelectedDate('');
+                                            setStartDate('');
+                                            setEndDate('');
                                             setAdsPage(0);
                                             setAds([]);
                                         }}
@@ -1088,25 +1066,33 @@ function HomeContent() {
                                 </div>
 
                                 <div className="filter-group">
-                                    <label htmlFor="date-select">Date</label>
-                                    <select
-                                        id="date-select"
-                                        value={selectedDate}
+                                    <label htmlFor="start-date">Start Date</label>
+                                    <input
+                                        id="start-date"
+                                        type="date"
+                                        value={startDate}
                                         onChange={(e) => {
-                                            setSelectedDate(e.target.value);
+                                            setStartDate(e.target.value);
                                             setAdsPage(0);
                                         }}
-                                        disabled={!selectedCountry || loadingDates}
-                                    >
-                                        <option value="">
-                                            {loadingDates ? 'Loading...' : 'Select a date'}
-                                        </option>
-                                        {dates.map((date) => (
-                                            <option key={date} value={date}>
-                                                {date}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        max={endDate || undefined}
+                                        disabled={!selectedCountry}
+                                    />
+                                </div>
+
+                                <div className="filter-group">
+                                    <label htmlFor="end-date">End Date</label>
+                                    <input
+                                        id="end-date"
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => {
+                                            setEndDate(e.target.value);
+                                            setAdsPage(0);
+                                        }}
+                                        min={startDate || undefined}
+                                        disabled={!selectedCountry}
+                                    />
                                 </div>
 
                                 <div className="filter-checkboxes">
@@ -1327,13 +1313,13 @@ function HomeContent() {
                                         </div>
                                     </div>
                                 </>
-                            ) : selectedCountry && selectedDate ? (
+                            ) : selectedCountry && startDate ? (
                                 <div className="ads-empty">
-                                    No ads found for the selected country and date.
+                                    No ads found for the selected country and date range.
                                 </div>
                             ) : (
                                 <div className="ads-empty">
-                                    Select a country and date to browse ads.
+                                    Select a country and a start date to browse ads.
                                 </div>
                             )}
                         </>
