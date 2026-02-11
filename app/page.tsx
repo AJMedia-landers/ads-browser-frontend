@@ -171,6 +171,9 @@ function HomeContent() {
     const [merging, setMerging] = useState(false);
     const [categorySortColumn, setCategorySortColumn] = useState<'category' | 'mapping_count' | 'ad_count'>('category');
     const [categorySortDirection, setCategorySortDirection] = useState<'asc' | 'desc'>('asc');
+    const [catCountry, setCatCountry] = useState('');
+    const [catStartDate, setCatStartDate] = useState('');
+    const [catEndDate, setCatEndDate] = useState('');
 
     // Sync state to URL params
     useEffect(() => {
@@ -221,7 +224,7 @@ function HomeContent() {
         try {
             const res = await fetch('/api/categories');
             const data = await res.json();
-            setCategories(data);
+            setCategories(Array.isArray(data) ? data : []);
         } catch {
             console.error('Failed to fetch categories');
         }
@@ -403,7 +406,7 @@ function HomeContent() {
             if (activeTab === 'mappings') {
                 fetchMappings();
             } else if (activeTab === 'categories') {
-                fetchAllCategories();
+                fetchAllCategories(catCountry, catStartDate, catEndDate);
             } else if (selectedCountry && startDate) {
                 fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
             }
@@ -503,10 +506,15 @@ function HomeContent() {
         });
     };
 
-    const fetchAllCategories = useCallback(async () => {
+    const fetchAllCategories = useCallback(async (country?: string, sDate?: string, eDate?: string) => {
         setLoadingAllCategories(true);
         try {
-            const res = await fetch('/api/categories/all');
+            const params = new URLSearchParams();
+            if (country) params.set('country', country);
+            if (sDate) params.set('startDate', sDate);
+            if (eDate) params.set('endDate', eDate);
+            const qs = params.toString();
+            const res = await fetch(`/api/categories/all${qs ? `?${qs}` : ''}`);
             const data = await res.json();
             setAllCategories(Array.isArray(data) ? data : []);
         } catch {
@@ -518,9 +526,9 @@ function HomeContent() {
 
     useEffect(() => {
         if (activeTab === 'categories') {
-            fetchAllCategories();
+            fetchAllCategories(catCountry, catStartDate, catEndDate);
         }
-    }, [activeTab, fetchAllCategories]);
+    }, [activeTab, catCountry, catStartDate, catEndDate, fetchAllCategories]);
 
     const handleMergeCategory = () => {
         if (!selectedSourceCategory || !mergeTarget.trim()) return;
@@ -551,7 +559,7 @@ function HomeContent() {
                     setTimeout(() => setSuccess(''), 5000);
                     setSelectedSourceCategory(null);
                     setMergeTarget('');
-                    fetchAllCategories();
+                    fetchAllCategories(catCountry, catStartDate, catEndDate);
                     fetchCategories();
                 } catch {
                     setError('Failed to merge categories');
@@ -684,6 +692,42 @@ function HomeContent() {
                                 <h1>Category Deduplication</h1>
                             </div>
 
+                            <div className="filter-controls">
+                                <div className="filter-group">
+                                    <label htmlFor="cat-country-select">Country</label>
+                                    <select
+                                        id="cat-country-select"
+                                        value={catCountry}
+                                        onChange={(e) => setCatCountry(e.target.value)}
+                                    >
+                                        <option value="">All countries</option>
+                                        {COUNTRIES.map((c) => (
+                                            <option key={c} value={c}>{c}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="filter-group">
+                                    <label htmlFor="cat-start-date">Start Date</label>
+                                    <input
+                                        id="cat-start-date"
+                                        type="date"
+                                        value={catStartDate}
+                                        onChange={(e) => setCatStartDate(e.target.value)}
+                                        max={catEndDate || undefined}
+                                    />
+                                </div>
+                                <div className="filter-group">
+                                    <label htmlFor="cat-end-date">End Date</label>
+                                    <input
+                                        id="cat-end-date"
+                                        type="date"
+                                        value={catEndDate}
+                                        onChange={(e) => setCatEndDate(e.target.value)}
+                                        min={catStartDate || undefined}
+                                    />
+                                </div>
+                            </div>
+
                             <div className="search-controls">
                                 <div className="search-field">
                                     <label htmlFor="category-search">Search categories</label>
@@ -707,7 +751,7 @@ function HomeContent() {
                                             Mappings {categorySortColumn === 'mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
                                         </span>
                                         <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('ad_count')}>
-                                            Ads {categorySortColumn === 'ad_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                            Ads{catCountry || catStartDate || catEndDate ? ' (filtered)' : ''} {categorySortColumn === 'ad_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
                                         </span>
                                     </div>
                                     {loadingAllCategories ? (
