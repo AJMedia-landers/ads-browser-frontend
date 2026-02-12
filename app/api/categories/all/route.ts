@@ -1,14 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
 const API = process.env.API_BASE_URL!;
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;
+        const searchParams = request.nextUrl.searchParams;
 
-        const res = await fetch(`${API}/api/url-mapping/categories/all`, {
+        const res = await fetch(`${API}/api/url-mapping/categories/all?${searchParams}`, {
             headers: { Authorization: `Bearer ${token}` },
         });
 
