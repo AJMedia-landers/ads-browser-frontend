@@ -1009,6 +1009,21 @@ body {
     width: fit-content;
 }
 
+.type-tag.url-mapping {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.type-tag.title-mapping {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.type-tag.ai-response {
+    background: #f3e8ff;
+    color: #7c3aed;
+}
+
 .ads-type-row {
     display: flex;
     align-items: center;
@@ -1177,7 +1192,7 @@ body {
 
 .dedup-list-header {
     display: grid;
-    grid-template-columns: 1fr 80px 80px;
+    grid-template-columns: 1fr 80px 80px 80px;
     padding: 0.75rem 1rem;
     background: #f8f9fa;
     border-bottom: 2px solid #e8e8e8;
@@ -1195,7 +1210,7 @@ body {
 
 .dedup-row {
     display: grid;
-    grid-template-columns: 1fr 80px 80px;
+    grid-template-columns: 1fr 80px 80px 80px;
     padding: 0.6rem 1rem;
     border-bottom: 1px solid #f0f0f0;
     cursor: pointer;
@@ -1292,6 +1307,102 @@ body {
     font-size: 0.95rem;
     text-align: center;
     padding: 2rem 1rem;
+}
+
+/* Conflicts banner */
+.conflicts-banner {
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+
+.conflicts-banner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+}
+
+.conflicts-warning {
+    font-weight: 600;
+    color: #92400e;
+    font-size: 0.95rem;
+}
+
+.conflicts-hint {
+    font-size: 0.8rem;
+    color: #b45309;
+}
+
+.conflicts-list {
+    border-top: 1px solid #fbbf24;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.conflict-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #fde68a;
+    background: #fffbeb;
+    gap: 0.75rem;
+}
+
+.conflict-item:last-child {
+    border-bottom: none;
+}
+
+.conflict-details {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.85rem;
+}
+
+.conflict-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.15rem;
+}
+
+.conflict-label {
+    font-weight: 600;
+    color: #78350f;
+    min-width: 35px;
+}
+
+.conflict-value {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #44403c;
+}
+
+.conflict-category {
+    background: #fbbf24;
+    color: #78350f;
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.conflict-actions {
+    display: flex;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
+
+.conflict-actions .action-btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
 }
 
 /* Responsive */

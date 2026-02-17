@@ -68,6 +68,15 @@ interface UrlMapping {
     created_at: string;
 }
 
+interface TitleMapping {
+    id: number;
+    title: string;
+    category: string;
+    translated_title: string;
+    created_at: string;
+    updated_at: string;
+}
+
 interface Ad {
     id: number;
     country: string;
@@ -96,7 +105,7 @@ function HomeContent() {
 
     // Initialize state from URL params
     const tabParam = searchParams.get('tab');
-    const initialTab: 'mappings' | 'ads' | 'categories' = tabParam === 'mappings' ? 'mappings' : tabParam === 'categories' ? 'categories' : 'ads';
+    const initialTab: 'mappings' | 'ads' | 'categories' | 'titles' = tabParam === 'mappings' ? 'mappings' : tabParam === 'categories' ? 'categories' : tabParam === 'titles' ? 'titles' : 'ads';
     const initialCountry = searchParams.get('country') || '';
     const initialStartDate = searchParams.get('startDate') || '';
     const initialEndDate = searchParams.get('endDate') || '';
@@ -107,7 +116,7 @@ function HomeContent() {
     const initialMappingSortColumn = searchParams.get('mappingsSortCol') || 'created_at';
     const initialMappingSortDirection = (searchParams.get('mappingsSortDir') || 'desc') as 'asc' | 'desc';
 
-    const [activeTab, setActiveTab] = useState<'mappings' | 'ads' | 'categories'>(initialTab);
+    const [activeTab, setActiveTab] = useState<'mappings' | 'ads' | 'categories' | 'titles'>(initialTab);
     const [mappings, setMappings] = useState<UrlMapping[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [total, setTotal] = useState(0);
@@ -145,7 +154,7 @@ function HomeContent() {
     const [savingAd, setSavingAd] = useState(false);
     const [filterUniqueUrls, setFilterUniqueUrls] = useState(false);
     const [filterEmptyCategory, setFilterEmptyCategory] = useState(false);
-    const [filterAiMappingOnly, setFilterAiMappingOnly] = useState(false);
+    const [filterType, setFilterType] = useState('');
     const [searchCategory, setSearchCategory] = useState('');
     const [searchTitle, setSearchTitle] = useState('');
     const [searchLandingPage, setSearchLandingPage] = useState('');
@@ -162,6 +171,15 @@ function HomeContent() {
         category: string;
         mapping_count: number;
         ad_count: number;
+        title_mapping_count: number;
+    }
+    interface TitleUrlConflict {
+        title_mapping_id: number;
+        title: string;
+        title_category: string;
+        url_mapping_id: number;
+        cleaned_url: string;
+        url_category: string;
     }
     const [allCategories, setAllCategories] = useState<CategoryWithCounts[]>([]);
     const [loadingAllCategories, setLoadingAllCategories] = useState(false);
@@ -169,11 +187,36 @@ function HomeContent() {
     const [selectedSourceCategory, setSelectedSourceCategory] = useState<string | null>(null);
     const [mergeTarget, setMergeTarget] = useState('');
     const [merging, setMerging] = useState(false);
-    const [categorySortColumn, setCategorySortColumn] = useState<'category' | 'mapping_count' | 'ad_count'>('category');
+    const [categorySortColumn, setCategorySortColumn] = useState<'category' | 'mapping_count' | 'ad_count' | 'title_mapping_count'>('category');
     const [categorySortDirection, setCategorySortDirection] = useState<'asc' | 'desc'>('asc');
     const [catCountry, setCatCountry] = useState('');
     const [catStartDate, setCatStartDate] = useState('');
     const [catEndDate, setCatEndDate] = useState('');
+    const [conflicts, setConflicts] = useState<TitleUrlConflict[]>([]);
+    const [loadingConflicts, setLoadingConflicts] = useState(false);
+    const [resolvingConflict, setResolvingConflict] = useState<number | null>(null);
+    const [conflictsExpanded, setConflictsExpanded] = useState(false);
+
+    // Title Mappings state
+    const [titleMappings, setTitleMappings] = useState<TitleMapping[]>([]);
+    const [titleMappingsTotal, setTitleMappingsTotal] = useState(0);
+    const [titleMappingsPage, setTitleMappingsPage] = useState(0);
+    const [titleMappingsLoading, setTitleMappingsLoading] = useState(false);
+    const [editingTitleId, setEditingTitleId] = useState<number | null>(null);
+    const [editTitleCategory, setEditTitleCategory] = useState('');
+    const [titleSearchTitle, setTitleSearchTitle] = useState('');
+    const [titleSearchCategory, setTitleSearchCategory] = useState('');
+    const debouncedTitleSearchTitle = useDebounce(titleSearchTitle, 400);
+    const debouncedTitleSearchCategory = useDebounce(titleSearchCategory, 400);
+    const [titleSortColumn, setTitleSortColumn] = useState<string>('created_at');
+    const [titleSortDirection, setTitleSortDirection] = useState<'asc' | 'desc'>('desc');
+    const [showAddTitleModal, setShowAddTitleModal] = useState(false);
+    const [newTitle, setNewTitle] = useState('');
+    const [newTitleCategory, setNewTitleCategory] = useState('');
+    const [savingTitle, setSavingTitle] = useState(false);
+    const [deletingTitle, setDeletingTitle] = useState<number | null>(null);
+    const [addingTitle, setAddingTitle] = useState(false);
+    const titleLimit = 20;
 
     // Sync state to URL params
     useEffect(() => {
@@ -187,6 +230,9 @@ function HomeContent() {
             if (mappingSortDirection !== 'desc') params.set('mappingsSortDir', mappingSortDirection);
         } else if (activeTab === 'categories') {
             params.set('tab', 'categories');
+        } else if (activeTab === 'titles') {
+            params.set('tab', 'titles');
+            if (titleMappingsPage > 0) params.set('titlesPage', titleMappingsPage.toString());
         } else {
             if (selectedCountry) params.set('country', selectedCountry);
             if (startDate) params.set('startDate', startDate);
@@ -230,9 +276,32 @@ function HomeContent() {
         }
     };
 
+    const fetchTitleMappings = useCallback(async () => {
+        setTitleMappingsLoading(true);
+        try {
+            const params = new URLSearchParams({
+                limit: titleLimit.toString(),
+                offset: (titleMappingsPage * titleLimit).toString(),
+                sortColumn: titleSortColumn,
+                sortDirection: titleSortDirection,
+            });
+            if (debouncedTitleSearchTitle) params.set('searchTitle', debouncedTitleSearchTitle);
+            if (debouncedTitleSearchCategory) params.set('searchCategory', debouncedTitleSearchCategory);
+
+            const res = await fetch(`/api/title-mappings?${params}`);
+            const data = await res.json();
+            setTitleMappings(data.mappings);
+            setTitleMappingsTotal(data.total);
+        } catch {
+            setError('Failed to fetch title mappings');
+        } finally {
+            setTitleMappingsLoading(false);
+        }
+    }, [titleMappingsPage, debouncedTitleSearchTitle, debouncedTitleSearchCategory, titleSortColumn, titleSortDirection]);
+
     const fetchAds = useCallback(async (
         country: string, sDate: string, eDate: string, page: number,
-        uniqueUrls: boolean, emptyCategory: boolean, aiMappingOnly: boolean,
+        uniqueUrls: boolean, emptyCategory: boolean, typeFilter: string,
         sCat: string, sTitle: string, sLanding: string,
         sortCol: string, sortDir: string
     ) => {
@@ -251,7 +320,7 @@ function HomeContent() {
                 offset: offset.toString(),
                 uniqueUrls: uniqueUrls.toString(),
                 emptyCategory: emptyCategory.toString(),
-                aiMappingOnly: aiMappingOnly.toString(),
+                ...(typeFilter ? { typeFilter } : {}),
                 sortColumn: sortCol,
                 sortDirection: sortDir,
             });
@@ -368,10 +437,16 @@ function HomeContent() {
     }, []);
 
     useEffect(() => {
-        if (selectedCountry && startDate) {
-            fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+        if (activeTab === 'titles') {
+            fetchTitleMappings();
         }
-    }, [selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
+    }, [activeTab, fetchTitleMappings]);
+
+    useEffect(() => {
+        if (selectedCountry && startDate) {
+            fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+        }
+    }, [selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
 
     const handleMappingSort = (column: string) => {
         if (mappingSortColumn === column) {
@@ -381,6 +456,102 @@ function HomeContent() {
             setMappingSortDirection('desc');
         }
         setPage(0);
+    };
+
+    const handleTitleMappingSort = (column: string) => {
+        if (titleSortColumn === column) {
+            setTitleSortDirection(titleSortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setTitleSortColumn(column);
+            setTitleSortDirection('desc');
+        }
+        setTitleMappingsPage(0);
+    };
+
+    const handleEditTitleMapping = (mapping: TitleMapping) => {
+        setEditingTitleId(mapping.id);
+        setEditTitleCategory(mapping.category || '');
+    };
+
+    const handleSaveTitleEdit = async (id: number) => {
+        setSavingTitle(true);
+        setError('');
+        try {
+            const res = await fetch(`/api/title-mappings/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: editTitleCategory }),
+            });
+
+            if (!res.ok) throw new Error('Failed to update');
+
+            setEditingTitleId(null);
+            setSuccess('Title mapping updated.');
+            setTimeout(() => setSuccess(''), 5000);
+            fetchTitleMappings();
+            fetchCategories();
+        } catch {
+            setError('Failed to update title mapping');
+        } finally {
+            setSavingTitle(false);
+        }
+    };
+
+    const handleDeleteTitleMapping = (id: number) => {
+        setConfirmAction({
+            message: 'Are you sure you want to delete this title mapping?',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                setDeletingTitle(id);
+                setError('');
+                try {
+                    const res = await fetch(`/api/title-mappings/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete');
+                    setSuccess('Title mapping deleted.');
+                    setTimeout(() => setSuccess(''), 3000);
+                    fetchTitleMappings();
+                } catch {
+                    setError('Failed to delete title mapping');
+                } finally {
+                    setDeletingTitle(null);
+                }
+            },
+        });
+    };
+
+    const handleAddTitleMapping = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        setAddingTitle(true);
+
+        try {
+            const res = await fetch('/api/title-mappings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: newTitle,
+                    category: newTitleCategory,
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to create');
+            }
+
+            setShowAddTitleModal(false);
+            setNewTitle('');
+            setNewTitleCategory('');
+            setSuccess('Title mapping created.');
+            setTimeout(() => setSuccess(''), 5000);
+            fetchTitleMappings();
+            fetchCategories();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create title mapping');
+        } finally {
+            setAddingTitle(false);
+        }
     };
 
     const handleSort = (column: string) => {
@@ -405,10 +576,13 @@ function HomeContent() {
             // Re-fetch current tab's data
             if (activeTab === 'mappings') {
                 fetchMappings();
+            } else if (activeTab === 'titles') {
+                fetchTitleMappings();
             } else if (activeTab === 'categories') {
                 fetchAllCategories(catCountry, catStartDate, catEndDate);
+                fetchConflicts();
             } else if (selectedCountry && startDate) {
-                fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+                fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
             }
             fetchCategories();
         } catch {
@@ -524,11 +698,50 @@ function HomeContent() {
         }
     }, []);
 
+    const fetchConflicts = useCallback(async () => {
+        setLoadingConflicts(true);
+        try {
+            const res = await fetch('/api/title-mappings/conflicts');
+            const data = await res.json();
+            setConflicts(Array.isArray(data) ? data : []);
+        } catch {
+            console.error('Failed to fetch conflicts');
+        } finally {
+            setLoadingConflicts(false);
+        }
+    }, []);
+
+    const handleResolveConflict = async (conflict: TitleUrlConflict, action: 'use_url_category' | 'use_title_category' | 'delete_title') => {
+        setResolvingConflict(conflict.title_mapping_id);
+        setError('');
+        try {
+            const res = await fetch('/api/title-mappings/conflicts/resolve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    titleMappingId: conflict.title_mapping_id,
+                    action,
+                    urlMappingId: conflict.url_mapping_id,
+                }),
+            });
+            if (!res.ok) throw new Error('Failed to resolve conflict');
+            setSuccess(`Conflict resolved (${action.replace(/_/g, ' ')}).`);
+            setTimeout(() => setSuccess(''), 5000);
+            fetchConflicts();
+            fetchAllCategories(catCountry, catStartDate, catEndDate);
+        } catch {
+            setError('Failed to resolve conflict');
+        } finally {
+            setResolvingConflict(null);
+        }
+    };
+
     useEffect(() => {
         if (activeTab === 'categories') {
             fetchAllCategories(catCountry, catStartDate, catEndDate);
+            fetchConflicts();
         }
-    }, [activeTab, catCountry, catStartDate, catEndDate, fetchAllCategories]);
+    }, [activeTab, catCountry, catStartDate, catEndDate, fetchAllCategories, fetchConflicts]);
 
     const handleMergeCategory = () => {
         if (!selectedSourceCategory || !mergeTarget.trim()) return;
@@ -555,11 +768,12 @@ function HomeContent() {
                     if (!res.ok) throw new Error('Failed to merge');
 
                     const data = await res.json();
-                    setSuccess(`Merged! ${data.mappingsUpdated} mappings and ${data.adsUpdated} ads updated.`);
+                    setSuccess(`Merged! ${data.mappingsUpdated} URL mappings, ${data.titleMappingsUpdated} title mappings, and ${data.adsUpdated} ads updated.`);
                     setTimeout(() => setSuccess(''), 5000);
                     setSelectedSourceCategory(null);
                     setMergeTarget('');
                     fetchAllCategories(catCountry, catStartDate, catEndDate);
+                    fetchConflicts();
                     fetchCategories();
                 } catch {
                     setError('Failed to merge categories');
@@ -570,7 +784,7 @@ function HomeContent() {
         });
     };
 
-    const handleCategorySort = (column: 'category' | 'mapping_count' | 'ad_count') => {
+    const handleCategorySort = (column: 'category' | 'mapping_count' | 'ad_count' | 'title_mapping_count') => {
         if (categorySortColumn === column) {
             setCategorySortDirection(categorySortDirection === 'asc' ? 'desc' : 'asc');
         } else {
@@ -644,6 +858,12 @@ function HomeContent() {
                             URL Mappings
                         </button>
                         <button
+                            className={`nav-tab ${activeTab === 'titles' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('titles')}
+                        >
+                            Title Mappings
+                        </button>
+                        <button
                             className={`nav-tab ${activeTab === 'categories' ? 'active' : ''}`}
                             onClick={() => setActiveTab('categories')}
                         >
@@ -686,11 +906,300 @@ function HomeContent() {
                         </div>
                     )}
 
-                    {activeTab === 'categories' ? (
+                    {activeTab === 'titles' ? (
+                        <>
+                            <div className="admin-header">
+                                <h1>Title Mappings</h1>
+                                <button
+                                    onClick={() => setShowAddTitleModal(true)}
+                                    className="btn btn-primary"
+                                >
+                                    Add Title Mapping
+                                </button>
+                            </div>
+
+                            <div className="search-controls">
+                                <div className="search-field">
+                                    <label htmlFor="title-search-title">Title</label>
+                                    <input
+                                        id="title-search-title"
+                                        type="text"
+                                        value={titleSearchTitle}
+                                        onChange={(e) => { setTitleSearchTitle(e.target.value); setTitleMappingsPage(0); }}
+                                        placeholder="Search by title..."
+                                    />
+                                </div>
+                                <div className="search-field">
+                                    <label htmlFor="title-search-category">Category</label>
+                                    <input
+                                        id="title-search-category"
+                                        type="text"
+                                        value={titleSearchCategory}
+                                        onChange={(e) => { setTitleSearchCategory(e.target.value); setTitleMappingsPage(0); }}
+                                        placeholder="Search by category..."
+                                        list="categories"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="table-container">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('id')}>
+                                                ID {titleSortColumn === 'id' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('title')}>
+                                                Title {titleSortColumn === 'title' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('category')}>
+                                                Category {titleSortColumn === 'category' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th>Translated Title</th>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('created_at')}>
+                                                Created {titleSortColumn === 'created_at' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {titleMappingsLoading ? (
+                                            <tr>
+                                                <td colSpan={6} className="empty-cell">
+                                                    Loading...
+                                                </td>
+                                            </tr>
+                                        ) : titleMappings.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} className="empty-cell">
+                                                    No title mappings found
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            titleMappings.map((mapping) => (
+                                                <tr key={mapping.id}>
+                                                    <td className="id-cell">{mapping.id}</td>
+                                                    <td className="url-cell">
+                                                        {highlightMatch(mapping.title, debouncedTitleSearchTitle)}
+                                                    </td>
+                                                    <td className="category-cell">
+                                                        {editingTitleId === mapping.id ? (
+                                                            <input
+                                                                type="text"
+                                                                value={editTitleCategory}
+                                                                onChange={(e) => setEditTitleCategory(e.target.value)}
+                                                                className="edit-input"
+                                                                list="categories"
+                                                            />
+                                                        ) : (
+                                                            <span className="category-badge">
+                                                                {highlightMatch(mapping.category || '', debouncedTitleSearchCategory)}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="url-cell">
+                                                        {mapping.translated_title || ''}
+                                                    </td>
+                                                    <td className="date-cell">
+                                                        {new Date(mapping.created_at).toLocaleDateString()}
+                                                    </td>
+                                                    <td className="actions-cell">
+                                                        {editingTitleId === mapping.id ? (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleSaveTitleEdit(mapping.id)}
+                                                                    className="action-btn save-btn"
+                                                                    disabled={savingTitle}
+                                                                >
+                                                                    {savingTitle ? 'Saving...' : 'Save'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setEditingTitleId(null)}
+                                                                    className="action-btn cancel-btn"
+                                                                    disabled={savingTitle}
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleEditTitleMapping(mapping)}
+                                                                    className="action-btn edit-btn"
+                                                                    disabled={deletingTitle === mapping.id}
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteTitleMapping(mapping.id)}
+                                                                    className="action-btn delete-btn"
+                                                                    disabled={deletingTitle === mapping.id}
+                                                                >
+                                                                    {deletingTitle === mapping.id ? 'Deleting...' : 'Delete'}
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+
+                                <div className="pagination">
+                                    <div className="pagination-info">
+                                        Showing {titleMappingsTotal === 0 ? 0 : titleMappingsPage * titleLimit + 1} to {Math.min((titleMappingsPage + 1) * titleLimit, titleMappingsTotal)} of {titleMappingsTotal} results
+                                    </div>
+                                    <div className="pagination-controls">
+                                        <button
+                                            onClick={() => setTitleMappingsPage((p) => Math.max(0, p - 1))}
+                                            disabled={titleMappingsPage === 0}
+                                            className="pagination-btn"
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="pagination-page">
+                                            Page {titleMappingsPage + 1} of {Math.ceil(titleMappingsTotal / titleLimit) || 1}
+                                        </span>
+                                        <button
+                                            onClick={() => setTitleMappingsPage((p) => p + 1)}
+                                            disabled={titleMappingsPage >= Math.ceil(titleMappingsTotal / titleLimit) - 1}
+                                            className="pagination-btn"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {showAddTitleModal && (
+                                <div className="modal-overlay">
+                                    <div className="modal">
+                                        <div className="modal-header">
+                                            <h2>Add New Title Mapping</h2>
+                                            <button
+                                                className="close-icon"
+                                                onClick={() => {
+                                                    setShowAddTitleModal(false);
+                                                    setNewTitle('');
+                                                    setNewTitleCategory('');
+                                                }}
+                                            >
+                                                &times;
+                                            </button>
+                                        </div>
+                                        <form onSubmit={handleAddTitleMapping} className="modal-form">
+                                            <div className="form-group">
+                                                <label htmlFor="newTitle">Title</label>
+                                                <input
+                                                    id="newTitle"
+                                                    type="text"
+                                                    value={newTitle}
+                                                    onChange={(e) => setNewTitle(e.target.value)}
+                                                    required
+                                                    placeholder="Ad title text"
+                                                />
+                                            </div>
+                                            <div className="form-group">
+                                                <label htmlFor="newTitleCategory">Category</label>
+                                                <input
+                                                    id="newTitleCategory"
+                                                    type="text"
+                                                    value={newTitleCategory}
+                                                    onChange={(e) => setNewTitleCategory(e.target.value)}
+                                                    required
+                                                    placeholder="Enter or select a category"
+                                                    list="categories"
+                                                />
+                                            </div>
+                                            <div className="modal-actions">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowAddTitleModal(false);
+                                                        setNewTitle('');
+                                                        setNewTitleCategory('');
+                                                    }}
+                                                    className="btn btn-secondary"
+                                                    disabled={addingTitle}
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button type="submit" className="btn btn-primary" disabled={addingTitle}>
+                                                    {addingTitle ? 'Adding...' : 'Add Title Mapping'}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : activeTab === 'categories' ? (
                         <>
                             <div className="admin-header">
                                 <h1>Category Deduplication</h1>
                             </div>
+
+                            {!loadingConflicts && conflicts.length > 0 && (
+                                <div className="conflicts-banner">
+                                    <div
+                                        className="conflicts-banner-header"
+                                        onClick={() => setConflictsExpanded(!conflictsExpanded)}
+                                        style={{ cursor: 'pointer' }}
+                                    >
+                                        <span className="conflicts-warning">
+                                            {conflictsExpanded ? '▼' : '▶'} {conflicts.length} title/URL mapping conflict{conflicts.length !== 1 ? 's' : ''} found
+                                        </span>
+                                        <span className="conflicts-hint">Click to {conflictsExpanded ? 'collapse' : 'expand'}</span>
+                                    </div>
+                                    {conflictsExpanded && (
+                                        <div className="conflicts-list">
+                                            {conflicts.map((conflict) => (
+                                                <div key={`${conflict.title_mapping_id}-${conflict.url_mapping_id}`} className="conflict-item">
+                                                    <div className="conflict-details">
+                                                        <div className="conflict-row">
+                                                            <span className="conflict-label">Title:</span>
+                                                            <span className="conflict-value" title={conflict.title}>{conflict.title}</span>
+                                                            <span className="conflict-category">{conflict.title_category}</span>
+                                                        </div>
+                                                        <div className="conflict-row">
+                                                            <span className="conflict-label">URL:</span>
+                                                            <span className="conflict-value" title={conflict.cleaned_url}>{conflict.cleaned_url}</span>
+                                                            <span className="conflict-category">{conflict.url_category}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="conflict-actions">
+                                                        <button
+                                                            className="action-btn"
+                                                            disabled={resolvingConflict === conflict.title_mapping_id}
+                                                            onClick={() => handleResolveConflict(conflict, 'use_url_category')}
+                                                            title={`Set title mapping category to "${conflict.url_category}"`}
+                                                        >
+                                                            Use URL Cat
+                                                        </button>
+                                                        <button
+                                                            className="action-btn"
+                                                            disabled={resolvingConflict === conflict.title_mapping_id}
+                                                            onClick={() => handleResolveConflict(conflict, 'use_title_category')}
+                                                            title={`Set URL mapping category to "${conflict.title_category}"`}
+                                                        >
+                                                            Use Title Cat
+                                                        </button>
+                                                        <button
+                                                            className="action-btn delete-btn"
+                                                            disabled={resolvingConflict === conflict.title_mapping_id}
+                                                            onClick={() => handleResolveConflict(conflict, 'delete_title')}
+                                                            title="Delete the title mapping"
+                                                        >
+                                                            {resolvingConflict === conflict.title_mapping_id ? 'Resolving...' : 'Del Title Map'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="filter-controls">
                                 <div className="filter-group">
@@ -748,7 +1257,10 @@ function HomeContent() {
                                             Category ({filteredAllCategories.length}) {categorySortColumn === 'category' && (categorySortDirection === 'asc' ? '↑' : '↓')}
                                         </span>
                                         <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('mapping_count')}>
-                                            Mappings {categorySortColumn === 'mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                            URL Map {categorySortColumn === 'mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                        </span>
+                                        <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('title_mapping_count')}>
+                                            Title Map {categorySortColumn === 'title_mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
                                         </span>
                                         <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('ad_count')}>
                                             Ads{catCountry || catStartDate || catEndDate ? ' (filtered)' : ''} {categorySortColumn === 'ad_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
@@ -776,6 +1288,7 @@ function HomeContent() {
                                                 >
                                                     <span className="dedup-row-name">{highlightMatch(cat.category, categorySearch)}</span>
                                                     <span className="dedup-row-count">{cat.mapping_count}</span>
+                                                    <span className="dedup-row-count">{cat.title_mapping_count}</span>
                                                     <span className="dedup-row-count">{cat.ad_count}</span>
                                                 </div>
                                             ))}
@@ -1165,17 +1678,19 @@ function HomeContent() {
                                         />
                                         Empty/unknown categories
                                     </label>
-                                    <label className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            checked={filterAiMappingOnly}
-                                            onChange={(e) => {
-                                                setFilterAiMappingOnly(e.target.checked);
-                                                setAdsPage(0);
-                                            }}
-                                        />
-                                        AI mapping only
-                                    </label>
+                                    <select
+                                        value={filterType}
+                                        onChange={(e) => {
+                                            setFilterType(e.target.value);
+                                            setAdsPage(0);
+                                        }}
+                                        style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', border: '2px solid #e8e8e8', fontSize: '0.85rem' }}
+                                    >
+                                        <option value="">All types</option>
+                                        <option value="url_mapping">URL Mapping</option>
+                                        <option value="title_mapping">Title Mapping</option>
+                                        <option value="ai_response">AI Response</option>
+                                    </select>
                                 </div>
                             </div>
 
@@ -1278,7 +1793,9 @@ function HomeContent() {
                                                                     </span>
                                                                     <div className="ads-type-row">
                                                                         {ad.type && (
-                                                                            <span className="type-tag">{ad.type}</span>
+                                                                            <span className={`type-tag ${ad.type.replace('_', '-')}`}>
+                                                                                {ad.type === 'url_mapping' ? 'URL Mapping' : ad.type === 'title_mapping' ? 'Title Mapping' : ad.type === 'ai_response' ? 'AI Response' : ad.type}
+                                                                            </span>
                                                                         )}
                                                                         <button
                                                                             className="uninterested-btn"
@@ -1413,10 +1930,10 @@ function HomeContent() {
             )}
 
             {/* Loading overlay */}
-            {(saving || adding || savingAd || merging) && (
+            {(saving || adding || savingAd || merging || savingTitle || addingTitle) && (
                 <div className="loading-overlay">
                     <div className="loading-spinner"></div>
-                    <p>{saving ? 'Updating records...' : adding ? 'Creating mapping...' : merging ? 'Merging categories...' : 'Updating ad category...'}</p>
+                    <p>{saving ? 'Updating records...' : adding ? 'Creating mapping...' : merging ? 'Merging categories...' : savingTitle ? 'Updating title mapping...' : addingTitle ? 'Creating title mapping...' : 'Updating ad category...'}</p>
                 </div>
             )}
         </div>
