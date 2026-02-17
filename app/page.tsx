@@ -530,8 +530,10 @@ function HomeContent() {
 
             if (!res.ok) throw new Error('Failed to update');
 
+            const data = await res.json();
             setEditingTitleId(null);
-            setSuccess('Title mapping updated.');
+            const adsMsg = data.adsUpdated ? ` ${data.adsUpdated} ads updated.` : '';
+            setSuccess(`Title mapping updated.${adsMsg}`);
 
             fetchTitleMappings();
             fetchCategories();
@@ -588,7 +590,8 @@ function HomeContent() {
             setShowAddTitleModal(false);
             setNewTitle('');
             setNewTitleCategory('');
-            setSuccess('Title mapping created.');
+            const adsMsg = data.adsUpdated ? ` ${data.adsUpdated} ads updated.` : '';
+            setSuccess(`Title mapping created.${adsMsg}`);
 
             fetchTitleMappings();
             fetchCategories();
