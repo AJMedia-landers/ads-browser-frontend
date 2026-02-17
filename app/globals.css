@@ -129,6 +129,98 @@ body {
     margin: 0;
 }
 
+.header-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.info-btn {
+    padding: 0.35rem 0.85rem;
+    border-radius: 20px;
+    border: 1.5px solid #cbd5e1;
+    background: #f8fafc;
+    color: #64748b;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.info-btn:hover {
+    border-color: #6366f1;
+    color: #4f46e5;
+    background: #eef2ff;
+    box-shadow: 0 1px 4px rgba(99, 102, 241, 0.15);
+}
+
+.info-modal {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s ease;
+}
+
+.info-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+}
+
+.info-modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #1a1a1a;
+}
+
+.info-modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    color: #374151;
+    font-size: 0.9375rem;
+    line-height: 1.65;
+}
+
+.info-modal-body p {
+    margin: 0 0 0.75rem 0;
+}
+
+.info-modal-body ul {
+    margin: 0 0 0.75rem 0;
+    padding-left: 1.5rem;
+}
+
+.info-modal-body li {
+    margin-bottom: 0.4rem;
+}
+
+.info-modal-body hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 1.25rem 0;
+}
+
+.info-modal-body code {
+    background: #f1f5f9;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: #475569;
+}
+
 /* Buttons */
 .btn {
     padding: 0.75rem 1.5rem;
@@ -885,7 +977,6 @@ body {
     display: flex;
     align-items: center;
     gap: 1.5rem;
-    margin-left: auto;
 }
 
 .checkbox-label {
@@ -1009,6 +1100,21 @@ body {
     width: fit-content;
 }
 
+.type-tag.url-mapping {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+
+.type-tag.title-mapping {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.type-tag.ai-response {
+    background: #f3e8ff;
+    color: #7c3aed;
+}
+
 .ads-type-row {
     display: flex;
     align-items: center;
@@ -1112,15 +1218,11 @@ body {
     font-size: 0.7rem;
 }
 
-.ads-url-cell {
-    max-width: 400px;
-}
-
 .ads-url-cell .url-link {
     display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-all;
+    white-space: normal;
+    overflow-wrap: break-word;
     font-size: 0.75rem;
     color: #3b82f6;
 }
@@ -1177,7 +1279,7 @@ body {
 
 .dedup-list-header {
     display: grid;
-    grid-template-columns: 1fr 80px 80px;
+    grid-template-columns: 1fr 80px 80px 80px;
     padding: 0.75rem 1rem;
     background: #f8f9fa;
     border-bottom: 2px solid #e8e8e8;
@@ -1195,7 +1297,7 @@ body {
 
 .dedup-row {
     display: grid;
-    grid-template-columns: 1fr 80px 80px;
+    grid-template-columns: 1fr 80px 80px 80px;
     padding: 0.6rem 1rem;
     border-bottom: 1px solid #f0f0f0;
     cursor: pointer;
@@ -1258,14 +1360,43 @@ body {
     font-size: 0.85rem;
 }
 
+.dedup-source-list {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
 .dedup-source-value {
-    padding: 0.6rem 0.75rem;
+    padding: 0.4rem 0.75rem;
     background: #fee2e2;
     color: #991b1b;
     border-radius: 8px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 500;
     word-break: break-word;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.dedup-source-remove {
+    background: none;
+    border: none;
+    color: #991b1b;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0 0.25rem;
+    line-height: 1;
+    opacity: 0.6;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.dedup-source-remove:hover {
+    opacity: 1;
 }
 
 .dedup-merge-target input {
@@ -1419,7 +1550,7 @@ body {
     }
 
     .ads-url-cell {
-        max-width: 120px;
+        word-break: break-all;
     }
 
     .ads-thumbnail {

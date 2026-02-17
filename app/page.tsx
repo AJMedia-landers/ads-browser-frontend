@@ -68,6 +68,15 @@ interface UrlMapping {
     created_at: string;
 }
 
+interface TitleMapping {
+    id: number;
+    title: string;
+    category: string;
+    translated_title: string;
+    created_at: string;
+    updated_at: string;
+}
+
 interface Ad {
     id: number;
     country: string;
@@ -88,6 +97,7 @@ interface Ad {
     url_count: number;
     category_count: number;
     title_count: number;
+    cleaned_landing_page: string;
 }
 
 function HomeContent() {
@@ -96,7 +106,7 @@ function HomeContent() {
 
     // Initialize state from URL params
     const tabParam = searchParams.get('tab');
-    const initialTab: 'mappings' | 'ads' | 'categories' = tabParam === 'mappings' ? 'mappings' : tabParam === 'categories' ? 'categories' : 'ads';
+    const initialTab: 'mappings' | 'ads' | 'categories' | 'titles' = tabParam === 'mappings' ? 'mappings' : tabParam === 'categories' ? 'categories' : tabParam === 'titles' ? 'titles' : 'ads';
     const initialCountry = searchParams.get('country') || '';
     const initialStartDate = searchParams.get('startDate') || '';
     const initialEndDate = searchParams.get('endDate') || '';
@@ -107,7 +117,7 @@ function HomeContent() {
     const initialMappingSortColumn = searchParams.get('mappingsSortCol') || 'created_at';
     const initialMappingSortDirection = (searchParams.get('mappingsSortDir') || 'desc') as 'asc' | 'desc';
 
-    const [activeTab, setActiveTab] = useState<'mappings' | 'ads' | 'categories'>(initialTab);
+    const [activeTab, setActiveTab] = useState<'mappings' | 'ads' | 'categories' | 'titles'>(initialTab);
     const [mappings, setMappings] = useState<UrlMapping[]>([]);
     const [categories, setCategories] = useState<string[]>([]);
     const [total, setTotal] = useState(0);
@@ -124,6 +134,7 @@ function HomeContent() {
     const [newCategory, setNewCategory] = useState('');
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [hoveredUrlId, setHoveredUrlId] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState<number | null>(null);
@@ -143,18 +154,19 @@ function HomeContent() {
     const [editingAdId, setEditingAdId] = useState<number | null>(null);
     const [editAdCategory, setEditAdCategory] = useState('');
     const [savingAd, setSavingAd] = useState(false);
-    const [filterUniqueUrls, setFilterUniqueUrls] = useState(false);
+    const [uniqueFilter, setUniqueFilter] = useState('none');
     const [filterEmptyCategory, setFilterEmptyCategory] = useState(false);
-    const [filterAiMappingOnly, setFilterAiMappingOnly] = useState(false);
+    const [filterType, setFilterType] = useState('');
     const [searchCategory, setSearchCategory] = useState('');
     const [searchTitle, setSearchTitle] = useState('');
     const [searchLandingPage, setSearchLandingPage] = useState('');
     const debouncedSearchCategory = useDebounce(searchCategory, 400);
     const debouncedSearchTitle = useDebounce(searchTitle, 400);
     const debouncedSearchLandingPage = useDebounce(searchLandingPage, 400);
-    const [sortColumn, setSortColumn] = useState<string>('id');
+    const [sortColumn, setSortColumn] = useState<string>('occurrences');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+    const [exporting, setExporting] = useState(false);
     const adsLimit = 50;
 
     // Categories Dedup state
@@ -162,18 +174,41 @@ function HomeContent() {
         category: string;
         mapping_count: number;
         ad_count: number;
+        title_mapping_count: number;
     }
     const [allCategories, setAllCategories] = useState<CategoryWithCounts[]>([]);
     const [loadingAllCategories, setLoadingAllCategories] = useState(false);
     const [categorySearch, setCategorySearch] = useState('');
-    const [selectedSourceCategory, setSelectedSourceCategory] = useState<string | null>(null);
+    const [selectedSourceCategories, setSelectedSourceCategories] = useState<Set<string>>(new Set());
     const [mergeTarget, setMergeTarget] = useState('');
     const [merging, setMerging] = useState(false);
-    const [categorySortColumn, setCategorySortColumn] = useState<'category' | 'mapping_count' | 'ad_count'>('category');
+    const [normalising, setNormalising] = useState(false);
+    const [categorySortColumn, setCategorySortColumn] = useState<'category' | 'mapping_count' | 'ad_count' | 'title_mapping_count'>('category');
     const [categorySortDirection, setCategorySortDirection] = useState<'asc' | 'desc'>('asc');
     const [catCountry, setCatCountry] = useState('');
     const [catStartDate, setCatStartDate] = useState('');
     const [catEndDate, setCatEndDate] = useState('');
+    // Title Mappings state
+    const [titleMappings, setTitleMappings] = useState<TitleMapping[]>([]);
+    const [titleMappingsTotal, setTitleMappingsTotal] = useState(0);
+    const [titleMappingsPage, setTitleMappingsPage] = useState(0);
+    const [titleMappingsLoading, setTitleMappingsLoading] = useState(false);
+    const [editingTitleId, setEditingTitleId] = useState<number | null>(null);
+    const [editTitleCategory, setEditTitleCategory] = useState('');
+    const [titleSearchTitle, setTitleSearchTitle] = useState('');
+    const [titleSearchCategory, setTitleSearchCategory] = useState('');
+    const debouncedTitleSearchTitle = useDebounce(titleSearchTitle, 400);
+    const debouncedTitleSearchCategory = useDebounce(titleSearchCategory, 400);
+    const [titleSortColumn, setTitleSortColumn] = useState<string>('created_at');
+    const [titleSortDirection, setTitleSortDirection] = useState<'asc' | 'desc'>('desc');
+    const [showAddTitleModal, setShowAddTitleModal] = useState(false);
+    const [newTitle, setNewTitle] = useState('');
+    const [newTitleCategory, setNewTitleCategory] = useState('');
+    const [savingTitle, setSavingTitle] = useState(false);
+    const [deletingTitle, setDeletingTitle] = useState<number | null>(null);
+    const [addingTitle, setAddingTitle] = useState(false);
+    const titleLimit = 20;
+    const [infoModal, setInfoModal] = useState<string | null>(null);
 
     // Sync state to URL params
     useEffect(() => {
@@ -187,6 +222,9 @@ function HomeContent() {
             if (mappingSortDirection !== 'desc') params.set('mappingsSortDir', mappingSortDirection);
         } else if (activeTab === 'categories') {
             params.set('tab', 'categories');
+        } else if (activeTab === 'titles') {
+            params.set('tab', 'titles');
+            if (titleMappingsPage > 0) params.set('titlesPage', titleMappingsPage.toString());
         } else {
             if (selectedCountry) params.set('country', selectedCountry);
             if (startDate) params.set('startDate', startDate);
@@ -210,11 +248,14 @@ function HomeContent() {
             if (debouncedMappingSearchCategory) params.set('searchCategory', debouncedMappingSearchCategory);
 
             const res = await fetch(`/api/mappings?${params}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setMappings([]); setTotal(0); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load mappings.`); setMappings([]); setTotal(0); return; }
+            setFetchError(null);
             const data = await res.json();
             setMappings(data.mappings);
             setTotal(data.total);
         } catch {
-            setError('Failed to fetch mappings');
+            setFetchError('Could not connect to server — check your connection and try again.');
         } finally {
             setLoading(false);
         }
@@ -223,6 +264,7 @@ function HomeContent() {
     const fetchCategories = async () => {
         try {
             const res = await fetch('/api/categories');
+            if (!res.ok) { console.error(`Failed to fetch categories: ${res.status}`); return; }
             const data = await res.json();
             setCategories(Array.isArray(data) ? data : []);
         } catch {
@@ -230,9 +272,35 @@ function HomeContent() {
         }
     };
 
+    const fetchTitleMappings = useCallback(async () => {
+        setTitleMappingsLoading(true);
+        try {
+            const params = new URLSearchParams({
+                limit: titleLimit.toString(),
+                offset: (titleMappingsPage * titleLimit).toString(),
+                sortColumn: titleSortColumn,
+                sortDirection: titleSortDirection,
+            });
+            if (debouncedTitleSearchTitle) params.set('searchTitle', debouncedTitleSearchTitle);
+            if (debouncedTitleSearchCategory) params.set('searchCategory', debouncedTitleSearchCategory);
+
+            const res = await fetch(`/api/title-mappings?${params}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setTitleMappings([]); setTitleMappingsTotal(0); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load title mappings.`); setTitleMappings([]); setTitleMappingsTotal(0); return; }
+            setFetchError(null);
+            const data = await res.json();
+            setTitleMappings(data.mappings);
+            setTitleMappingsTotal(data.total);
+        } catch {
+            setFetchError('Could not connect to server — check your connection and try again.');
+        } finally {
+            setTitleMappingsLoading(false);
+        }
+    }, [titleMappingsPage, debouncedTitleSearchTitle, debouncedTitleSearchCategory, titleSortColumn, titleSortDirection]);
+
     const fetchAds = useCallback(async (
         country: string, sDate: string, eDate: string, page: number,
-        uniqueUrls: boolean, emptyCategory: boolean, aiMappingOnly: boolean,
+        uFilter: string, emptyCategory: boolean, typeFilter: string,
         sCat: string, sTitle: string, sLanding: string,
         sortCol: string, sortDir: string
     ) => {
@@ -249,9 +317,9 @@ function HomeContent() {
                 date: sDate,
                 limit: adsLimit.toString(),
                 offset: offset.toString(),
-                uniqueUrls: uniqueUrls.toString(),
+                uniqueFilter: uFilter,
                 emptyCategory: emptyCategory.toString(),
-                aiMappingOnly: aiMappingOnly.toString(),
+                ...(typeFilter ? { typeFilter } : {}),
                 sortColumn: sortCol,
                 sortDirection: sortDir,
             });
@@ -260,11 +328,14 @@ function HomeContent() {
             if (sTitle) params.set('searchTitle', sTitle);
             if (sLanding) params.set('searchLandingPage', sLanding);
             const res = await fetch(`/api/ads?${params}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setAds([]); setAdsTotal(0); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load ads.`); setAds([]); setAdsTotal(0); return; }
+            setFetchError(null);
             const data = await res.json();
             setAds(data.ads || []);
             setAdsTotal(data.total || 0);
         } catch {
-            setError('Failed to fetch ads');
+            setFetchError('Could not connect to server — check your connection and try again.');
             setAds([]);
             setAdsTotal(0);
         } finally {
@@ -287,6 +358,7 @@ function HomeContent() {
                 body: JSON.stringify({
                     landingPage: ad.landing_page,
                     category: editAdCategory,
+                    title: ad.title || undefined,
                 }),
             });
 
@@ -294,21 +366,26 @@ function HomeContent() {
 
             const data = await res.json();
             setEditingAdId(null);
-            const mappingMsg = data.mappingCreated ? 'URL mapping created. ' : 'URL mapping updated. ';
-            setSuccess(`${mappingMsg}${data.rowsUpdated} ad records updated.`);
-            setTimeout(() => setSuccess(''), 5000);
 
-            // Update local state to reflect the change for all matching URLs
-            // Use same cleaning logic as backend
+            const mappingMsg = data.mappingCreated ? 'URL + title mappings created' : 'Mappings updated';
+            const totalUpdated = (data.rowsUpdated || 0) + (data.titleAdsUpdated || 0);
+            setSuccess(`${mappingMsg}. ${totalUpdated} ad records updated.`);
+
+            // Update local state for all matching URLs and titles
             const cleanedUrl = cleanUrl(ad.landing_page);
             const baseUrl = cleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
+            const adTitle = ad.title?.trim().toLowerCase() || '';
             setAds(prevAds => prevAds.map(a => {
                 const aCleanedUrl = cleanUrl(a.landing_page);
                 const aBaseUrl = aCleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
-                // Match if one contains the other (same ILIKE logic as backend)
-                return aBaseUrl.includes(baseUrl) || baseUrl.includes(aBaseUrl)
-                    ? { ...a, category: editAdCategory }
-                    : a;
+                // URL match (same ILIKE logic as backend)
+                const urlMatch = aBaseUrl.includes(baseUrl) || baseUrl.includes(aBaseUrl);
+                // Title match — only apply if ad doesn't already have a URL-based category
+                const titleMatch = adTitle && a.title?.trim().toLowerCase() === adTitle;
+                if (urlMatch || titleMatch) {
+                    return { ...a, category: editAdCategory };
+                }
+                return a;
             }));
         } catch {
             setError('Failed to update category');
@@ -324,7 +401,7 @@ function HomeContent() {
 
     const handleMarkUninterested = (ad: Ad) => {
         setConfirmAction({
-            message: `Mark this URL as uninterested? This will delete ALL ads with this landing page and it will never appear again.`,
+            message: `Mark this as uninterested? This will delete ALL ads with this landing page AND all ads with this title. They will never appear again.`,
             onConfirm: async () => {
                 setConfirmAction(null);
                 setSavingAd(true);
@@ -340,7 +417,7 @@ function HomeContent() {
 
                     const data = await res.json();
                     setSuccess(`Marked as uninterested. ${data.rowsDeleted} ad records deleted.`);
-                    setTimeout(() => setSuccess(''), 5000);
+        
 
                     const cleanedUrl = cleanUrl(ad.landing_page);
                     const baseUrl = cleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
@@ -359,6 +436,43 @@ function HomeContent() {
         });
     };
 
+    const handleExportAds = async () => {
+        if (!selectedCountry || !startDate) return;
+        setExporting(true);
+        try {
+            const params = new URLSearchParams({
+                country: selectedCountry,
+                date: startDate,
+                uniqueFilter,
+                emptyCategory: filterEmptyCategory.toString(),
+                sortColumn,
+                sortDirection,
+            });
+            if (endDate) params.set('endDate', endDate);
+            if (filterType) params.set('typeFilter', filterType);
+            if (debouncedSearchCategory) params.set('searchCategory', debouncedSearchCategory);
+            if (debouncedSearchTitle) params.set('searchTitle', debouncedSearchTitle);
+            if (debouncedSearchLandingPage) params.set('searchLandingPage', debouncedSearchLandingPage);
+
+            const res = await fetch(`/api/ads/export?${params}`);
+            if (!res.ok) throw new Error('Export failed');
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ads-${selectedCountry}-${startDate}${endDate ? `-to-${endDate}` : ''}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch {
+            setError('Failed to export ads');
+        } finally {
+            setExporting(false);
+        }
+    };
+
     useEffect(() => {
         fetchMappings();
     }, [fetchMappings]);
@@ -368,10 +482,16 @@ function HomeContent() {
     }, []);
 
     useEffect(() => {
-        if (selectedCountry && startDate) {
-            fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+        if (activeTab === 'titles') {
+            fetchTitleMappings();
         }
-    }, [selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
+    }, [activeTab, fetchTitleMappings]);
+
+    useEffect(() => {
+        if (selectedCountry && startDate) {
+            fetchAds(selectedCountry, startDate, endDate, adsPage, uniqueFilter, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+        }
+    }, [selectedCountry, startDate, endDate, adsPage, uniqueFilter, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
 
     const handleMappingSort = (column: string) => {
         if (mappingSortColumn === column) {
@@ -381,6 +501,105 @@ function HomeContent() {
             setMappingSortDirection('desc');
         }
         setPage(0);
+    };
+
+    const handleTitleMappingSort = (column: string) => {
+        if (titleSortColumn === column) {
+            setTitleSortDirection(titleSortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setTitleSortColumn(column);
+            setTitleSortDirection('desc');
+        }
+        setTitleMappingsPage(0);
+    };
+
+    const handleEditTitleMapping = (mapping: TitleMapping) => {
+        setEditingTitleId(mapping.id);
+        setEditTitleCategory(mapping.category || '');
+    };
+
+    const handleSaveTitleEdit = async (id: number) => {
+        setSavingTitle(true);
+        setError('');
+        try {
+            const res = await fetch(`/api/title-mappings/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: editTitleCategory }),
+            });
+
+            if (!res.ok) throw new Error('Failed to update');
+
+            const data = await res.json();
+            setEditingTitleId(null);
+            const adsMsg = data.adsUpdated ? ` ${data.adsUpdated} ads updated.` : '';
+            setSuccess(`Title mapping updated.${adsMsg}`);
+
+            fetchTitleMappings();
+            fetchCategories();
+        } catch {
+            setError('Failed to update title mapping');
+        } finally {
+            setSavingTitle(false);
+        }
+    };
+
+    const handleDeleteTitleMapping = (id: number) => {
+        setConfirmAction({
+            message: 'Are you sure you want to delete this title mapping?',
+            onConfirm: async () => {
+                setConfirmAction(null);
+                setDeletingTitle(id);
+                setError('');
+                try {
+                    const res = await fetch(`/api/title-mappings/${id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete');
+                    setSuccess('Title mapping deleted.');
+
+                    fetchTitleMappings();
+                } catch {
+                    setError('Failed to delete title mapping');
+                } finally {
+                    setDeletingTitle(null);
+                }
+            },
+        });
+    };
+
+    const handleAddTitleMapping = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        setAddingTitle(true);
+
+        try {
+            const res = await fetch('/api/title-mappings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: newTitle,
+                    category: newTitleCategory,
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to create');
+            }
+
+            setShowAddTitleModal(false);
+            setNewTitle('');
+            setNewTitleCategory('');
+            const adsMsg = data.adsUpdated ? ` ${data.adsUpdated} ads updated.` : '';
+            setSuccess(`Title mapping created.${adsMsg}`);
+
+            fetchTitleMappings();
+            fetchCategories();
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create title mapping');
+        } finally {
+            setAddingTitle(false);
+        }
     };
 
     const handleSort = (column: string) => {
@@ -401,14 +620,15 @@ function HomeContent() {
             const res = await fetch('/api/cache/clear', { method: 'POST' });
             if (!res.ok) throw new Error('Failed to clear cache');
             setSuccess('Cache cleared. Refreshing data...');
-            setTimeout(() => setSuccess(''), 3000);
             // Re-fetch current tab's data
             if (activeTab === 'mappings') {
                 fetchMappings();
+            } else if (activeTab === 'titles') {
+                fetchTitleMappings();
             } else if (activeTab === 'categories') {
                 fetchAllCategories(catCountry, catStartDate, catEndDate);
             } else if (selectedCountry && startDate) {
-                fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterAiMappingOnly, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+                fetchAds(selectedCountry, startDate, endDate, adsPage, uniqueFilter, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
             }
             fetchCategories();
         } catch {
@@ -444,7 +664,7 @@ function HomeContent() {
             const data = await res.json();
             setEditingId(null);
             setSuccess(`Mapping updated. ${data.stagingRowsUpdated} ad records updated.`);
-            setTimeout(() => setSuccess(''), 5000);
+
             fetchMappings();
             fetchCategories();
         } catch {
@@ -465,7 +685,7 @@ function HomeContent() {
                     const res = await fetch(`/api/mappings/${id}`, { method: 'DELETE' });
                     if (!res.ok) throw new Error('Failed to delete');
                     setSuccess('Mapping deleted.');
-                    setTimeout(() => setSuccess(''), 3000);
+
                     fetchMappings();
                     fetchCategories();
                 } catch {
@@ -479,7 +699,7 @@ function HomeContent() {
 
     const handleMarkMappingUninterested = (mapping: UrlMapping) => {
         setConfirmAction({
-            message: `Mark this URL as uninterested? This will delete ALL ads with this landing page and update the category to "Manual Uninterested".`,
+            message: `Mark this as uninterested? This will delete ALL ads with this landing page AND all ads with this title, and update the category to "Manual Uninterested". They will never appear again.`,
             onConfirm: async () => {
                 setConfirmAction(null);
                 setSaving(true);
@@ -495,7 +715,7 @@ function HomeContent() {
 
                     const data = await res.json();
                     setSuccess(`Marked as uninterested. ${data.rowsDeleted} ad records deleted.`);
-                    setTimeout(() => setSuccess(''), 5000);
+        
                     fetchMappings();
                 } catch {
                     setError('Failed to mark as uninterested');
@@ -515,10 +735,13 @@ function HomeContent() {
             if (eDate) params.set('endDate', eDate);
             const qs = params.toString();
             const res = await fetch(`/api/categories/all${qs ? `?${qs}` : ''}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setAllCategories([]); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load categories.`); setAllCategories([]); return; }
+            setFetchError(null);
             const data = await res.json();
             setAllCategories(Array.isArray(data) ? data : []);
         } catch {
-            setError('Failed to fetch categories');
+            setFetchError('Could not connect to server — check your connection and try again.');
         } finally {
             setLoadingAllCategories(false);
         }
@@ -531,38 +754,47 @@ function HomeContent() {
     }, [activeTab, catCountry, catStartDate, catEndDate, fetchAllCategories]);
 
     const handleMergeCategory = () => {
-        if (!selectedSourceCategory || !mergeTarget.trim()) return;
-        if (selectedSourceCategory === mergeTarget.trim()) {
-            setError('Source and target categories must be different');
+        if (selectedSourceCategories.size === 0 || !mergeTarget.trim()) return;
+        if (selectedSourceCategories.has(mergeTarget.trim())) {
+            setError('Target category cannot be one of the selected source categories');
             return;
         }
+        const sourceList = Array.from(selectedSourceCategories);
         setConfirmAction({
-            message: `Merge "${selectedSourceCategory}" into "${mergeTarget.trim()}"? All records will be updated to use the target category name.`,
+            message: `Merge ${sourceList.length} categor${sourceList.length === 1 ? 'y' : 'ies'} into "${mergeTarget.trim()}"?\n\nSources:\n${sourceList.map(s => `  • ${s}`).join('\n')}\n\nAll records will be updated to use the target category name.`,
             onConfirm: async () => {
                 setConfirmAction(null);
                 setMerging(true);
                 setError('');
+                let totalMappings = 0;
+                let totalTitleMappings = 0;
+                let totalAds = 0;
                 try {
-                    const res = await fetch('/api/categories/rename', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            oldCategory: selectedSourceCategory,
-                            newCategory: mergeTarget.trim(),
-                        }),
-                    });
+                    for (const source of sourceList) {
+                        const res = await fetch('/api/categories/rename', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                oldCategory: source,
+                                newCategory: mergeTarget.trim(),
+                            }),
+                        });
 
-                    if (!res.ok) throw new Error('Failed to merge');
+                        if (!res.ok) throw new Error(`Failed to merge "${source}"`);
 
-                    const data = await res.json();
-                    setSuccess(`Merged! ${data.mappingsUpdated} mappings and ${data.adsUpdated} ads updated.`);
-                    setTimeout(() => setSuccess(''), 5000);
-                    setSelectedSourceCategory(null);
+                        const data = await res.json();
+                        totalMappings += data.mappingsUpdated;
+                        totalTitleMappings += data.titleMappingsUpdated;
+                        totalAds += data.adsUpdated;
+                    }
+                    setSuccess(`Merged ${sourceList.length} categories! ${totalMappings} URL mappings, ${totalTitleMappings} title mappings, and ${totalAds} ads updated.`);
+        
+                    setSelectedSourceCategories(new Set());
                     setMergeTarget('');
                     fetchAllCategories(catCountry, catStartDate, catEndDate);
                     fetchCategories();
-                } catch {
-                    setError('Failed to merge categories');
+                } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to merge categories');
                 } finally {
                     setMerging(false);
                 }
@@ -570,7 +802,7 @@ function HomeContent() {
         });
     };
 
-    const handleCategorySort = (column: 'category' | 'mapping_count' | 'ad_count') => {
+    const handleCategorySort = (column: 'category' | 'mapping_count' | 'ad_count' | 'title_mapping_count') => {
         if (categorySortColumn === column) {
             setCategorySortDirection(categorySortDirection === 'asc' ? 'desc' : 'asc');
         } else {
@@ -614,7 +846,7 @@ function HomeContent() {
             setNewUrl('');
             setNewCategory('');
             setSuccess(`Mapping created. ${data.stagingRowsUpdated} ad records updated.`);
-            setTimeout(() => setSuccess(''), 5000);
+
             fetchMappings();
             fetchCategories();
         } catch (err) {
@@ -633,19 +865,25 @@ function HomeContent() {
                     <div className="nav-tabs">
                         <button
                             className={`nav-tab ${activeTab === 'ads' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('ads')}
+                            onClick={() => { setActiveTab('ads'); setFetchError(null); }}
                         >
                             Ads Browser
                         </button>
                         <button
                             className={`nav-tab ${activeTab === 'mappings' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('mappings')}
+                            onClick={() => { setActiveTab('mappings'); setFetchError(null); }}
                         >
                             URL Mappings
                         </button>
                         <button
+                            className={`nav-tab ${activeTab === 'titles' ? 'active' : ''}`}
+                            onClick={() => { setActiveTab('titles'); setFetchError(null); }}
+                        >
+                            Title Mappings
+                        </button>
+                        <button
                             className={`nav-tab ${activeTab === 'categories' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('categories')}
+                            onClick={() => { setActiveTab('categories'); setFetchError(null); }}
                         >
                             Categories
                         </button>
@@ -686,10 +924,293 @@ function HomeContent() {
                         </div>
                     )}
 
-                    {activeTab === 'categories' ? (
+                    {activeTab === 'titles' ? (
                         <>
                             <div className="admin-header">
-                                <h1>Category Deduplication</h1>
+                                <div className="header-title-group">
+                                    <h1>Title Mappings</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('titles')}>&#9432; How this works</button>
+                                </div>
+                                <button
+                                    onClick={() => setShowAddTitleModal(true)}
+                                    className="btn btn-primary"
+                                >
+                                    Add Title Mapping
+                                </button>
+                            </div>
+
+                            <div className="search-controls">
+                                <div className="search-field">
+                                    <label htmlFor="title-search-title">Title</label>
+                                    <input
+                                        id="title-search-title"
+                                        type="text"
+                                        value={titleSearchTitle}
+                                        onChange={(e) => { setTitleSearchTitle(e.target.value); setTitleMappingsPage(0); }}
+                                        placeholder="Search by title..."
+                                    />
+                                </div>
+                                <div className="search-field">
+                                    <label htmlFor="title-search-category">Category</label>
+                                    <input
+                                        id="title-search-category"
+                                        type="text"
+                                        value={titleSearchCategory}
+                                        onChange={(e) => { setTitleSearchCategory(e.target.value); setTitleMappingsPage(0); }}
+                                        placeholder="Search by category..."
+                                        list="categories"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="table-container">
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('id')}>
+                                                ID {titleSortColumn === 'id' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('title')}>
+                                                Title {titleSortColumn === 'title' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('category')}>
+                                                Category {titleSortColumn === 'category' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th>Translated Title</th>
+                                            <th className="sortable-header" onClick={() => handleTitleMappingSort('created_at')}>
+                                                Created {titleSortColumn === 'created_at' && (titleSortDirection === 'asc' ? '↑' : '↓')}
+                                            </th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {titleMappingsLoading ? (
+                                            <tr>
+                                                <td colSpan={6} className="empty-cell">
+                                                    Loading...
+                                                </td>
+                                            </tr>
+                                        ) : titleMappings.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={6} className="empty-cell">
+                                                    {fetchError || 'No title mappings found'}
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            titleMappings.map((mapping) => (
+                                                <tr key={mapping.id}>
+                                                    <td className="id-cell">{mapping.id}</td>
+                                                    <td className="url-cell">
+                                                        {highlightMatch(mapping.title, debouncedTitleSearchTitle)}
+                                                    </td>
+                                                    <td className="category-cell">
+                                                        {editingTitleId === mapping.id ? (
+                                                            <input
+                                                                type="text"
+                                                                value={editTitleCategory}
+                                                                onChange={(e) => setEditTitleCategory(e.target.value)}
+                                                                className="edit-input"
+                                                                list="categories"
+                                                            />
+                                                        ) : (
+                                                            <span className="category-badge">
+                                                                {highlightMatch(mapping.category || '', debouncedTitleSearchCategory)}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="url-cell">
+                                                        {mapping.translated_title || ''}
+                                                    </td>
+                                                    <td className="date-cell">
+                                                        {new Date(mapping.created_at).toLocaleDateString()}
+                                                    </td>
+                                                    <td className="actions-cell">
+                                                        {editingTitleId === mapping.id ? (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleSaveTitleEdit(mapping.id)}
+                                                                    className="action-btn save-btn"
+                                                                    disabled={savingTitle}
+                                                                >
+                                                                    {savingTitle ? 'Saving...' : 'Save'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setEditingTitleId(null)}
+                                                                    className="action-btn cancel-btn"
+                                                                    disabled={savingTitle}
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleEditTitleMapping(mapping)}
+                                                                    className="action-btn edit-btn"
+                                                                    disabled={deletingTitle === mapping.id}
+                                                                >
+                                                                    Edit
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDeleteTitleMapping(mapping.id)}
+                                                                    className="action-btn delete-btn"
+                                                                    disabled={deletingTitle === mapping.id}
+                                                                >
+                                                                    {deletingTitle === mapping.id ? 'Deleting...' : 'Delete'}
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+
+                                <div className="pagination">
+                                    <div className="pagination-info">
+                                        Showing {titleMappingsTotal === 0 ? 0 : titleMappingsPage * titleLimit + 1} to {Math.min((titleMappingsPage + 1) * titleLimit, titleMappingsTotal)} of {titleMappingsTotal} results
+                                    </div>
+                                    <div className="pagination-controls">
+                                        <button
+                                            onClick={() => setTitleMappingsPage((p) => Math.max(0, p - 1))}
+                                            disabled={titleMappingsPage === 0}
+                                            className="pagination-btn"
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="pagination-page">
+                                            Page {titleMappingsPage + 1} of {Math.ceil(titleMappingsTotal / titleLimit) || 1}
+                                        </span>
+                                        <button
+                                            onClick={() => setTitleMappingsPage((p) => p + 1)}
+                                            disabled={titleMappingsPage >= Math.ceil(titleMappingsTotal / titleLimit) - 1}
+                                            className="pagination-btn"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {showAddTitleModal && (
+                                <div className="modal-overlay">
+                                    <div className="modal">
+                                        <div className="modal-header">
+                                            <h2>Add New Title Mapping</h2>
+                                            <button
+                                                className="close-icon"
+                                                onClick={() => {
+                                                    setShowAddTitleModal(false);
+                                                    setNewTitle('');
+                                                    setNewTitleCategory('');
+                                                }}
+                                            >
+                                                &times;
+                                            </button>
+                                        </div>
+                                        <form onSubmit={handleAddTitleMapping} className="modal-form">
+                                            <div className="form-group">
+                                                <label htmlFor="newTitle">Title</label>
+                                                <input
+                                                    id="newTitle"
+                                                    type="text"
+                                                    value={newTitle}
+                                                    onChange={(e) => setNewTitle(e.target.value)}
+                                                    required
+                                                    placeholder="Ad title text"
+                                                />
+                                            </div>
+                                            <div className="form-group">
+                                                <label htmlFor="newTitleCategory">Category</label>
+                                                <input
+                                                    id="newTitleCategory"
+                                                    type="text"
+                                                    value={newTitleCategory}
+                                                    onChange={(e) => setNewTitleCategory(e.target.value)}
+                                                    required
+                                                    placeholder="Enter or select a category"
+                                                    list="categories"
+                                                />
+                                            </div>
+                                            <div className="modal-actions">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowAddTitleModal(false);
+                                                        setNewTitle('');
+                                                        setNewTitleCategory('');
+                                                    }}
+                                                    className="btn btn-secondary"
+                                                    disabled={addingTitle}
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button type="submit" className="btn btn-primary" disabled={addingTitle}>
+                                                    {addingTitle ? 'Adding...' : 'Add Title Mapping'}
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : activeTab === 'categories' ? (
+                        <>
+                            <div className="admin-header">
+                                <div className="header-title-group">
+                                    <h1>Category Deduplication</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('categories')}>&#9432; How this works</button>
+                                </div>
+                                <button
+                                    className="btn btn-primary"
+                                    disabled={normalising}
+                                    onClick={() => {
+                                        setConfirmAction({
+                                            message: 'This will deduplicate categories and backcategorise all ads. Data may be temporarily inconsistent — this can take several minutes.',
+                                            onConfirm: async () => {
+                                                setConfirmAction(null);
+                                                setNormalising(true);
+                                                try {
+                                                    const res = await fetch('/api/categories/normalise', { method: 'POST' });
+                                                    if (!res.ok) {
+                                                        const data = await res.json();
+                                                        alert(data.error || 'Failed to start normalisation');
+                                                        setNormalising(false);
+                                                        return;
+                                                    }
+                                                    // Poll status every 5s
+                                                    const poll = setInterval(async () => {
+                                                        try {
+                                                            const statusRes = await fetch('/api/categories/normalise/status');
+                                                            const status = await statusRes.json();
+                                                            if (status.status !== 'running') {
+                                                                clearInterval(poll);
+                                                                setNormalising(false);
+                                                                if (status.status === 'completed') {
+                                                                    const s = status.stats;
+                                                                    alert(`Normalisation complete!\n\nDeduplicated: ${s.deduplicated.urlMappings} URL mappings, ${s.deduplicated.ads} ads, ${s.deduplicated.titleMappings} title mappings\n\nBackcategorised: ${s.backcategorised.urlMappingsFixed} URL mappings fixed, ${s.backcategorised.titleMappingsFixed} title mappings fixed, ${s.backcategorised.adsFromUrlMappings + s.backcategorised.adsFromTitleMappings} ads updated`);
+                                                                } else {
+                                                                    alert('Normalisation failed: ' + (status.error || 'Unknown error'));
+                                                                }
+                                                                fetchAllCategories(catCountry, catStartDate, catEndDate);
+                                                            }
+                                                        } catch {
+                                                            clearInterval(poll);
+                                                            setNormalising(false);
+                                                            alert('Lost connection while polling normalisation status');
+                                                        }
+                                                    }, 5000);
+                                                } catch {
+                                                    setNormalising(false);
+                                                    alert('Failed to start normalisation');
+                                                }
+                                            },
+                                        });
+                                    }}
+                                >
+                                    {normalising ? 'Normalising...' : 'Normalise Data'}
+                                </button>
                             </div>
 
                             <div className="filter-controls">
@@ -748,7 +1269,10 @@ function HomeContent() {
                                             Category ({filteredAllCategories.length}) {categorySortColumn === 'category' && (categorySortDirection === 'asc' ? '↑' : '↓')}
                                         </span>
                                         <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('mapping_count')}>
-                                            Mappings {categorySortColumn === 'mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                            URL Map {categorySortColumn === 'mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
+                                        </span>
+                                        <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('title_mapping_count')}>
+                                            Title Map {categorySortColumn === 'title_mapping_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
                                         </span>
                                         <span className="sortable-header dedup-header-count" onClick={() => handleCategorySort('ad_count')}>
                                             Ads{catCountry || catStartDate || catEndDate ? ' (filtered)' : ''} {categorySortColumn === 'ad_count' && (categorySortDirection === 'asc' ? '↑' : '↓')}
@@ -760,22 +1284,28 @@ function HomeContent() {
                                             <p>Loading categories...</p>
                                         </div>
                                     ) : filteredAllCategories.length === 0 ? (
-                                        <div className="ads-empty">No categories found.</div>
+                                        <div className="ads-empty">{fetchError || 'No categories found.'}</div>
                                     ) : (
                                         <div className="dedup-list-body">
                                             {filteredAllCategories.map((cat) => (
                                                 <div
                                                     key={cat.category}
-                                                    className={`dedup-row ${selectedSourceCategory === cat.category ? 'selected' : ''}`}
+                                                    className={`dedup-row ${selectedSourceCategories.has(cat.category) ? 'selected' : ''}`}
                                                     onClick={() => {
-                                                        setSelectedSourceCategory(
-                                                            selectedSourceCategory === cat.category ? null : cat.category
-                                                        );
-                                                        setMergeTarget('');
+                                                        setSelectedSourceCategories(prev => {
+                                                            const next = new Set(prev);
+                                                            if (next.has(cat.category)) {
+                                                                next.delete(cat.category);
+                                                            } else {
+                                                                next.add(cat.category);
+                                                            }
+                                                            return next;
+                                                        });
                                                     }}
                                                 >
                                                     <span className="dedup-row-name">{highlightMatch(cat.category, categorySearch)}</span>
                                                     <span className="dedup-row-count">{cat.mapping_count}</span>
+                                                    <span className="dedup-row-count">{cat.title_mapping_count}</span>
                                                     <span className="dedup-row-count">{cat.ad_count}</span>
                                                 </div>
                                             ))}
@@ -784,12 +1314,27 @@ function HomeContent() {
                                 </div>
 
                                 <div className="dedup-merge-panel">
-                                    {selectedSourceCategory ? (
+                                    {selectedSourceCategories.size > 0 ? (
                                         <>
-                                            <h3>Merge Category</h3>
+                                            <h3>Merge {selectedSourceCategories.size} Categor{selectedSourceCategories.size === 1 ? 'y' : 'ies'}</h3>
                                             <div className="dedup-merge-source">
-                                                <label>Source (will be renamed)</label>
-                                                <div className="dedup-source-value">{selectedSourceCategory}</div>
+                                                <label>Sources (will be renamed)</label>
+                                                <div className="dedup-source-list">
+                                                    {Array.from(selectedSourceCategories).map(src => (
+                                                        <div key={src} className="dedup-source-value">
+                                                            {src}
+                                                            <button
+                                                                className="dedup-source-remove"
+                                                                onClick={() => setSelectedSourceCategories(prev => {
+                                                                    const next = new Set(prev);
+                                                                    next.delete(src);
+                                                                    return next;
+                                                                })}
+                                                                title="Remove"
+                                                            >&times;</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                             <div className="dedup-merge-target">
                                                 <label htmlFor="merge-target">Target (new name)</label>
@@ -807,12 +1352,12 @@ function HomeContent() {
                                                 onClick={handleMergeCategory}
                                                 disabled={!mergeTarget.trim() || merging}
                                             >
-                                                {merging ? 'Merging...' : 'Merge'}
+                                                {merging ? 'Merging...' : `Merge ${selectedSourceCategories.size} → ${mergeTarget.trim() || '...'}`}
                                             </button>
                                         </>
                                     ) : (
                                         <div className="dedup-merge-empty">
-                                            Select a category from the list to merge it into another.
+                                            Click categories from the list to select them for merging. You can select multiple.
                                         </div>
                                     )}
                                 </div>
@@ -827,7 +1372,10 @@ function HomeContent() {
                     ) : activeTab === 'mappings' ? (
                         <>
                             <div className="admin-header">
-                                <h1>URL Mapping Admin</h1>
+                                <div className="header-title-group">
+                                    <h1>URL Mapping Admin</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('mappings')}>&#9432; How this works</button>
+                                </div>
                                 <button
                                     onClick={() => setShowAddModal(true)}
                                     className="btn btn-primary"
@@ -889,7 +1437,7 @@ function HomeContent() {
                                         ) : mappings.length === 0 ? (
                                             <tr>
                                                 <td colSpan={5} className="empty-cell">
-                                                    No mappings found
+                                                    {fetchError || 'No mappings found'}
                                                 </td>
                                             </tr>
                                         ) : (
@@ -1086,7 +1634,10 @@ function HomeContent() {
                     ) : (
                         <>
                             <div className="admin-header">
-                                <h1>Ads Browser</h1>
+                                <div className="header-title-group">
+                                    <h1>Ads Browser</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('ads')}>&#9432; How this works</button>
+                                </div>
                             </div>
 
                             <div className="filter-controls">
@@ -1141,19 +1692,23 @@ function HomeContent() {
                                         disabled={!selectedCountry}
                                     />
                                 </div>
+                            </div>
 
+                            <div className="filter-controls">
                                 <div className="filter-checkboxes">
-                                    <label className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            checked={filterUniqueUrls}
-                                            onChange={(e) => {
-                                                setFilterUniqueUrls(e.target.checked);
-                                                setAdsPage(0);
-                                            }}
-                                        />
-                                        Unique landing pages
-                                    </label>
+                                    <select
+                                        value={uniqueFilter}
+                                        onChange={(e) => {
+                                            setUniqueFilter(e.target.value);
+                                            setAdsPage(0);
+                                        }}
+                                        style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', border: '2px solid #e8e8e8', fontSize: '0.85rem' }}
+                                    >
+                                        <option value="none">No dedup</option>
+                                        <option value="uniqueUrls">Unique URLs</option>
+                                        <option value="uniqueCategoryUrl">Unique Category + URL</option>
+                                        <option value="uniqueTitleUrl">Unique Title + URL</option>
+                                    </select>
                                     <label className="checkbox-label">
                                         <input
                                             type="checkbox"
@@ -1165,17 +1720,27 @@ function HomeContent() {
                                         />
                                         Empty/unknown categories
                                     </label>
-                                    <label className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            checked={filterAiMappingOnly}
-                                            onChange={(e) => {
-                                                setFilterAiMappingOnly(e.target.checked);
-                                                setAdsPage(0);
-                                            }}
-                                        />
-                                        AI mapping only
-                                    </label>
+                                    <select
+                                        value={filterType}
+                                        onChange={(e) => {
+                                            setFilterType(e.target.value);
+                                            setAdsPage(0);
+                                        }}
+                                        style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', border: '2px solid #e8e8e8', fontSize: '0.85rem' }}
+                                    >
+                                        <option value="">All types</option>
+                                        <option value="url_mapping">URL Mapping</option>
+                                        <option value="title_mapping">Title Mapping</option>
+                                        <option value="ai_response">AI Response</option>
+                                    </select>
+                                    <button
+                                        onClick={handleExportAds}
+                                        disabled={exporting || !selectedCountry || !startDate}
+                                        className="action-btn save-btn"
+                                        style={{ fontSize: '0.85rem', padding: '0.3rem 0.7rem' }}
+                                    >
+                                        {exporting ? 'Exporting...' : 'Export to Excel'}
+                                    </button>
                                 </div>
                             </div>
 
@@ -1278,7 +1843,9 @@ function HomeContent() {
                                                                     </span>
                                                                     <div className="ads-type-row">
                                                                         {ad.type && (
-                                                                            <span className="type-tag">{ad.type}</span>
+                                                                            <span className={`type-tag ${ad.type.replace('_', '-')}`}>
+                                                                                {ad.type === 'url_mapping' ? 'URL Mapping' : ad.type === 'title_mapping' ? 'Title Mapping' : ad.type === 'ai_response' ? 'AI Response' : ad.type}
+                                                                            </span>
                                                                         )}
                                                                         <button
                                                                             className="uninterested-btn"
@@ -1325,15 +1892,17 @@ function HomeContent() {
                                                             )}
                                                         </td>
                                                         <td className="ads-url-cell">
-                                                            <a
-                                                                href={ad.landing_page}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="url-link"
-                                                                title={ad.landing_page}
-                                                            >
-                                                                {highlightMatch(ad.landing_page, debouncedSearchLandingPage)}
-                                                            </a>
+                                                            <div className="cleaned-url" style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '2px' }}>
+                                                                <a
+                                                                    href={ad.landing_page}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="url-link"
+                                                                    title={ad.landing_page}
+                                                                >
+                                                                    {highlightMatch(cleanUrl(ad.landing_page), debouncedSearchLandingPage)}
+                                                                </a>
+                                                            </div>
                                                             {ad.url_count > 1 && (
                                                                 <span className="count-tag">{ad.url_count} ads with this URL</span>
                                                             )}
@@ -1371,7 +1940,7 @@ function HomeContent() {
                                 </>
                             ) : selectedCountry && startDate ? (
                                 <div className="ads-empty">
-                                    No ads found for the selected country and date range.
+                                        {fetchError || 'No ads found for the selected country and date range.'}
                                 </div>
                             ) : (
                                 <div className="ads-empty">
@@ -1412,11 +1981,123 @@ function HomeContent() {
                 </div>
             )}
 
+            {/* Info modal */}
+            {infoModal && (
+                <div className="modal-overlay" onClick={() => setInfoModal(null)}>
+                    <div className="info-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="info-modal-header">
+                            <h2>{infoModal === 'ads' ? 'Ads Browser' : infoModal === 'mappings' ? 'URL Mappings' : infoModal === 'titles' ? 'Title Mappings' : infoModal === 'categories' ? 'Categories & Normalise Data' : ''}</h2>
+                            <button className="close-icon" onClick={() => setInfoModal(null)}>&times;</button>
+                        </div>
+                        <div className="info-modal-body">
+                            {infoModal === 'ads' && (
+                                <>
+                                    <p><strong>What is this?</strong></p>
+                                    <p>This is where you can see every ad we&apos;ve scraped. Pick a country and date range and you&apos;ll get a list of ads &mdash; each one shows the ad image, its title, where it links to, and what category it&apos;s been tagged with (if any).</p>
+
+                                    <p><strong>Categorising ads</strong></p>
+                                    <p>The main job here is to give each ad a category. When you set a category on an ad (e.g. tagging a Sportsbet ad as &ldquo;Gambling&rdquo;), three things happen:</p>
+                                    <ol>
+                                        <li>That ad gets the category you chose.</li>
+                                        <li>A <strong>URL mapping</strong> is created automatically, so every other ad that links to the same website &mdash; past and future &mdash; gets the same category too. For example, if you categorise one ad pointing to <code>sportsbet.com.au</code>, all 500+ other ads pointing there will also become &ldquo;Gambling&rdquo;.</li>
+                                        <li>A <strong>title mapping</strong> is also created automatically, and all historical ads with that same title get updated too &mdash; even if they link to a different URL.</li>
+                                    </ol>
+                                    <p>URL mappings take precedence over title mappings &mdash; if an ad already has a category from a URL mapping, a title mapping won&apos;t override it. Ads can also be categorised by <strong>AI responses</strong> (automatic categorisation). The &ldquo;type&rdquo; column shows how each ad got its category.</p>
+
+                                    <p><strong>Filters</strong></p>
+                                    <ul>
+                                        <li><strong>Empty/unknown categories</strong> &mdash; shows only ads that don&apos;t have a category yet. This is the quickest way to find work to do.</li>
+                                        <li><strong>Dedup mode</strong> &mdash; reduces duplicate rows:
+                                            <ul>
+                                                <li><em>Unique URLs</em> &mdash; one row per landing page.</li>
+                                                <li><em>Unique Category + URL</em> &mdash; one row per category/URL combination.</li>
+                                                <li><em>Unique Title + URL</em> &mdash; one row per title/URL combination.</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Type filter</strong> &mdash; show only ads categorised by a specific method: URL Mapping, Title Mapping, or AI Response.</li>
+                                        <li><strong>Search</strong> &mdash; filter by category name, title text, or landing page URL.</li>
+                                    </ul>
+
+                                    <p><strong>Not Interested</strong></p>
+                                    <p>If an ad isn&apos;t relevant (e.g. a generic news article, not a real ad), you can mark it as &ldquo;Not Interested&rdquo; to hide it from future review. This removes all ads matching both the landing page URL <em>and</em> the title, so ads from the same source won&apos;t keep reappearing.</p>
+                                </>
+                            )}
+                            {infoModal === 'mappings' && (
+                                <>
+                                    <p><strong>What is this?</strong></p>
+                                    <p>URL mappings are rules that automatically assign a category to any ad based on its landing page URL. When a new ad comes in, the system checks if its URL matches a mapping &mdash; if it does, the ad gets categorised automatically.</p>
+
+                                    <p><strong>How does matching work?</strong></p>
+                                    <p>URLs are &ldquo;cleaned&rdquo; before matching: query parameters (tracking codes), www prefixes, and trailing slashes are removed, so <code>https://www.example.com/page?ref=123</code> and <code>https://example.com/page</code> are treated as the same URL.</p>
+
+                                    <p><strong>What can I do here?</strong></p>
+                                    <ul>
+                                        <li><strong>Add a mapping</strong> &mdash; enter a URL and a category. All existing ads with that URL will be updated immediately.</li>
+                                        <li><strong>Edit a mapping&apos;s category</strong> &mdash; all ads using that URL will be re-categorised.</li>
+                                        <li><strong>Delete a mapping</strong> &mdash; removes the rule (existing ads keep their current category).</li>
+                                        <li><strong>Not Interested</strong> &mdash; marks a URL as irrelevant. This deletes all ads matching the landing page URL <em>and</em> the title, so they won&apos;t reappear.</li>
+                                        <li><strong>Search</strong> by URL or category to find specific mappings.</li>
+                                    </ul>
+                                </>
+                            )}
+                            {infoModal === 'titles' && (
+                                <>
+                                    <p><strong>What is this?</strong></p>
+                                    <p>Title mappings work like URL mappings, but they match ads by their <em>title text</em> instead of their URL. This is useful when many different URLs share the same ad title (e.g. a brand running the same ad across many publishers).</p>
+
+                                    <p><strong>How does matching work?</strong></p>
+                                    <p>Titles are compared with extra whitespace removed, so minor formatting differences are ignored. Title mappings are lower priority than URL mappings &mdash; if an ad matches both a URL mapping and a title mapping, the URL mapping wins.</p>
+
+                                    <p><strong>What can I do here?</strong></p>
+                                    <ul>
+                                        <li><strong>Add a title mapping</strong> &mdash; enter a title and a category.</li>
+                                        <li><strong>Edit or delete</strong> existing title mappings.</li>
+                                        <li><strong>Search</strong> by title or category.</li>
+                                    </ul>
+                                </>
+                            )}
+                            {infoModal === 'categories' && (
+                                <>
+                                    <p><strong>What is this page?</strong></p>
+                                    <p>This page lists every category in the system and shows how many ads, URL mappings, and title mappings use each one. Use it to spot duplicates and clean things up.</p>
+
+                                    <p><strong>Merging categories</strong></p>
+                                    <p>If you notice categories that should be one (e.g. &ldquo;Gambling&rdquo; and &ldquo;Online Gambling&rdquo;), click on them to select them &mdash; you can select multiple at once. Then type the name you want to keep and hit merge. Everything using the old names switches to the new one.</p>
+
+                                    <hr />
+
+                                    <p><strong>What does &ldquo;Normalise Data&rdquo; do?</strong></p>
+                                    <p>It&apos;s a big cleanup button that fixes two problems at once. It takes a few minutes to run, but you can safely leave it going.</p>
+
+                                    <p><strong>1. Fixes duplicate category names</strong></p>
+                                    <p>Over time the same category can get entered in slightly different ways. For example, you might have:</p>
+                                    <ul>
+                                        <li>&ldquo;Health &amp; Beauty&rdquo;</li>
+                                        <li>&ldquo;health &amp; beauty&rdquo;</li>
+                                        <li>&ldquo;Health&amp;Beauty&rdquo;</li>
+                                        <li>&ldquo;Health  &amp;  Beauty&rdquo;</li>
+                                    </ul>
+                                    <p>Normalise finds all these variants and merges them into one name &mdash; whichever version is used the most. So if &ldquo;Health &amp; Beauty&rdquo; appears 200 times and &ldquo;health &amp; beauty&rdquo; appears 50 times, everything becomes &ldquo;Health &amp; Beauty&rdquo;.</p>
+
+                                    <p><strong>2. Fills in missing categories using your existing work</strong></p>
+                                    <p>When you categorise an ad (say you tag <code>sportsbet.com.au</code> as &ldquo;Gambling&rdquo;), that only applies going forward. But there might be hundreds of older ads pointing to <code>sportsbet.com.au</code> that were scraped <em>before</em> you created that mapping &mdash; those old ads are still sitting there with no category.</p>
+                                    <p>Normalise goes back through <strong>all historical data</strong> and applies your mappings retroactively. Every ad that matches a URL or title mapping you&apos;ve set up gets the correct category, no matter how old it is. This means your reports and category counts will include the full picture, not just ads scraped after you did the categorisation work.</p>
+                                    <p>It also cross-references between URL and title mappings. For example: if a URL mapping is marked &ldquo;unknown&rdquo; but an ad with that URL has a title you&apos;ve already categorised, it will use the title mapping to fix the URL mapping too.</p>
+
+                                    <p><strong>Is it safe?</strong></p>
+                                    <p>Yes &mdash; it never deletes anything. It only fills in blanks and fixes inconsistencies. The numbers on this page might jump around while it&apos;s running, but once it finishes the page refreshes automatically and everything will be consistent.</p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Loading overlay */}
-            {(saving || adding || savingAd || merging) && (
+            {(saving || adding || savingAd || merging || savingTitle || addingTitle) && (
                 <div className="loading-overlay">
                     <div className="loading-spinner"></div>
-                    <p>{saving ? 'Updating records...' : adding ? 'Creating mapping...' : merging ? 'Merging categories...' : 'Updating ad category...'}</p>
+                    <p>{saving ? 'Updating records...' : adding ? 'Creating mapping...' : merging ? 'Merging categories...' : savingTitle ? 'Updating title mapping...' : addingTitle ? 'Creating title mapping...' : 'Updating ad category...'}</p>
                 </div>
             )}
         </div>
