@@ -173,14 +173,6 @@ function HomeContent() {
         ad_count: number;
         title_mapping_count: number;
     }
-    interface TitleUrlConflict {
-        title_mapping_id: number;
-        title: string;
-        title_category: string;
-        url_mapping_id: number;
-        cleaned_url: string;
-        url_category: string;
-    }
     const [allCategories, setAllCategories] = useState<CategoryWithCounts[]>([]);
     const [loadingAllCategories, setLoadingAllCategories] = useState(false);
     const [categorySearch, setCategorySearch] = useState('');
@@ -192,11 +184,6 @@ function HomeContent() {
     const [catCountry, setCatCountry] = useState('');
     const [catStartDate, setCatStartDate] = useState('');
     const [catEndDate, setCatEndDate] = useState('');
-    const [conflicts, setConflicts] = useState<TitleUrlConflict[]>([]);
-    const [loadingConflicts, setLoadingConflicts] = useState(false);
-    const [resolvingConflict, setResolvingConflict] = useState<number | null>(null);
-    const [conflictsExpanded, setConflictsExpanded] = useState(false);
-
     // Title Mappings state
     const [titleMappings, setTitleMappings] = useState<TitleMapping[]>([]);
     const [titleMappingsTotal, setTitleMappingsTotal] = useState(0);
@@ -580,7 +567,6 @@ function HomeContent() {
                 fetchTitleMappings();
             } else if (activeTab === 'categories') {
                 fetchAllCategories(catCountry, catStartDate, catEndDate);
-                fetchConflicts();
             } else if (selectedCountry && startDate) {
                 fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
             }
@@ -698,50 +684,11 @@ function HomeContent() {
         }
     }, []);
 
-    const fetchConflicts = useCallback(async () => {
-        setLoadingConflicts(true);
-        try {
-            const res = await fetch('/api/title-mappings/conflicts');
-            const data = await res.json();
-            setConflicts(Array.isArray(data) ? data : []);
-        } catch {
-            console.error('Failed to fetch conflicts');
-        } finally {
-            setLoadingConflicts(false);
-        }
-    }, []);
-
-    const handleResolveConflict = async (conflict: TitleUrlConflict, action: 'use_url_category' | 'use_title_category' | 'delete_title') => {
-        setResolvingConflict(conflict.title_mapping_id);
-        setError('');
-        try {
-            const res = await fetch('/api/title-mappings/conflicts/resolve', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    titleMappingId: conflict.title_mapping_id,
-                    action,
-                    urlMappingId: conflict.url_mapping_id,
-                }),
-            });
-            if (!res.ok) throw new Error('Failed to resolve conflict');
-            setSuccess(`Conflict resolved (${action.replace(/_/g, ' ')}).`);
-            setTimeout(() => setSuccess(''), 5000);
-            fetchConflicts();
-            fetchAllCategories(catCountry, catStartDate, catEndDate);
-        } catch {
-            setError('Failed to resolve conflict');
-        } finally {
-            setResolvingConflict(null);
-        }
-    };
-
     useEffect(() => {
         if (activeTab === 'categories') {
             fetchAllCategories(catCountry, catStartDate, catEndDate);
-            fetchConflicts();
         }
-    }, [activeTab, catCountry, catStartDate, catEndDate, fetchAllCategories, fetchConflicts]);
+    }, [activeTab, catCountry, catStartDate, catEndDate, fetchAllCategories]);
 
     const handleMergeCategory = () => {
         if (!selectedSourceCategory || !mergeTarget.trim()) return;
@@ -773,7 +720,6 @@ function HomeContent() {
                     setSelectedSourceCategory(null);
                     setMergeTarget('');
                     fetchAllCategories(catCountry, catStartDate, catEndDate);
-                    fetchConflicts();
                     fetchCategories();
                 } catch {
                     setError('Failed to merge categories');
@@ -1139,67 +1085,6 @@ function HomeContent() {
                             <div className="admin-header">
                                 <h1>Category Deduplication</h1>
                             </div>
-
-                            {!loadingConflicts && conflicts.length > 0 && (
-                                <div className="conflicts-banner">
-                                    <div
-                                        className="conflicts-banner-header"
-                                        onClick={() => setConflictsExpanded(!conflictsExpanded)}
-                                        style={{ cursor: 'pointer' }}
-                                    >
-                                        <span className="conflicts-warning">
-                                            {conflictsExpanded ? '▼' : '▶'} {conflicts.length} title/URL mapping conflict{conflicts.length !== 1 ? 's' : ''} found
-                                        </span>
-                                        <span className="conflicts-hint">Click to {conflictsExpanded ? 'collapse' : 'expand'}</span>
-                                    </div>
-                                    {conflictsExpanded && (
-                                        <div className="conflicts-list">
-                                            {conflicts.map((conflict) => (
-                                                <div key={`${conflict.title_mapping_id}-${conflict.url_mapping_id}`} className="conflict-item">
-                                                    <div className="conflict-details">
-                                                        <div className="conflict-row">
-                                                            <span className="conflict-label">Title:</span>
-                                                            <span className="conflict-value" title={conflict.title}>{conflict.title}</span>
-                                                            <span className="conflict-category">{conflict.title_category}</span>
-                                                        </div>
-                                                        <div className="conflict-row">
-                                                            <span className="conflict-label">URL:</span>
-                                                            <span className="conflict-value" title={conflict.cleaned_url}>{conflict.cleaned_url}</span>
-                                                            <span className="conflict-category">{conflict.url_category}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="conflict-actions">
-                                                        <button
-                                                            className="action-btn"
-                                                            disabled={resolvingConflict === conflict.title_mapping_id}
-                                                            onClick={() => handleResolveConflict(conflict, 'use_url_category')}
-                                                            title={`Set title mapping category to "${conflict.url_category}"`}
-                                                        >
-                                                            Use URL Cat
-                                                        </button>
-                                                        <button
-                                                            className="action-btn"
-                                                            disabled={resolvingConflict === conflict.title_mapping_id}
-                                                            onClick={() => handleResolveConflict(conflict, 'use_title_category')}
-                                                            title={`Set URL mapping category to "${conflict.title_category}"`}
-                                                        >
-                                                            Use Title Cat
-                                                        </button>
-                                                        <button
-                                                            className="action-btn delete-btn"
-                                                            disabled={resolvingConflict === conflict.title_mapping_id}
-                                                            onClick={() => handleResolveConflict(conflict, 'delete_title')}
-                                                            title="Delete the title mapping"
-                                                        >
-                                                            {resolvingConflict === conflict.title_mapping_id ? 'Resolving...' : 'Del Title Map'}
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
 
                             <div className="filter-controls">
                                 <div className="filter-group">
