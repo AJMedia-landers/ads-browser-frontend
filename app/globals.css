@@ -977,7 +977,6 @@ body {
     display: flex;
     align-items: center;
     gap: 1.5rem;
-    margin-left: auto;
 }
 
 .checkbox-label {
@@ -1219,15 +1218,11 @@ body {
     font-size: 0.7rem;
 }
 
-.ads-url-cell {
-    max-width: 400px;
-}
-
 .ads-url-cell .url-link {
     display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-all;
+    white-space: normal;
+    overflow-wrap: break-word;
     font-size: 0.75rem;
     color: #3b82f6;
 }
@@ -1526,7 +1521,7 @@ body {
     }
 
     .ads-url-cell {
-        max-width: 120px;
+        word-break: break-all;
     }
 
     .ads-thumbnail {

@@ -97,6 +97,7 @@ interface Ad {
     url_count: number;
     category_count: number;
     title_count: number;
+    cleaned_landing_page: string;
 }
 
 function HomeContent() {
@@ -153,7 +154,7 @@ function HomeContent() {
     const [editingAdId, setEditingAdId] = useState<number | null>(null);
     const [editAdCategory, setEditAdCategory] = useState('');
     const [savingAd, setSavingAd] = useState(false);
-    const [filterUniqueUrls, setFilterUniqueUrls] = useState(false);
+    const [uniqueFilter, setUniqueFilter] = useState('none');
     const [filterEmptyCategory, setFilterEmptyCategory] = useState(false);
     const [filterType, setFilterType] = useState('');
     const [searchCategory, setSearchCategory] = useState('');
@@ -162,9 +163,10 @@ function HomeContent() {
     const debouncedSearchCategory = useDebounce(searchCategory, 400);
     const debouncedSearchTitle = useDebounce(searchTitle, 400);
     const debouncedSearchLandingPage = useDebounce(searchLandingPage, 400);
-    const [sortColumn, setSortColumn] = useState<string>('id');
+    const [sortColumn, setSortColumn] = useState<string>('occurrences');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+    const [exporting, setExporting] = useState(false);
     const adsLimit = 50;
 
     // Categories Dedup state
@@ -298,7 +300,7 @@ function HomeContent() {
 
     const fetchAds = useCallback(async (
         country: string, sDate: string, eDate: string, page: number,
-        uniqueUrls: boolean, emptyCategory: boolean, typeFilter: string,
+        uFilter: string, emptyCategory: boolean, typeFilter: string,
         sCat: string, sTitle: string, sLanding: string,
         sortCol: string, sortDir: string
     ) => {
@@ -315,7 +317,7 @@ function HomeContent() {
                 date: sDate,
                 limit: adsLimit.toString(),
                 offset: offset.toString(),
-                uniqueUrls: uniqueUrls.toString(),
+                uniqueFilter: uFilter,
                 emptyCategory: emptyCategory.toString(),
                 ...(typeFilter ? { typeFilter } : {}),
                 sortColumn: sortCol,
@@ -428,6 +430,43 @@ function HomeContent() {
         });
     };
 
+    const handleExportAds = async () => {
+        if (!selectedCountry || !startDate) return;
+        setExporting(true);
+        try {
+            const params = new URLSearchParams({
+                country: selectedCountry,
+                date: startDate,
+                uniqueFilter,
+                emptyCategory: filterEmptyCategory.toString(),
+                sortColumn,
+                sortDirection,
+            });
+            if (endDate) params.set('endDate', endDate);
+            if (filterType) params.set('typeFilter', filterType);
+            if (debouncedSearchCategory) params.set('searchCategory', debouncedSearchCategory);
+            if (debouncedSearchTitle) params.set('searchTitle', debouncedSearchTitle);
+            if (debouncedSearchLandingPage) params.set('searchLandingPage', debouncedSearchLandingPage);
+
+            const res = await fetch(`/api/ads/export?${params}`);
+            if (!res.ok) throw new Error('Export failed');
+
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ads-${selectedCountry}-${startDate}${endDate ? `-to-${endDate}` : ''}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch {
+            setError('Failed to export ads');
+        } finally {
+            setExporting(false);
+        }
+    };
+
     useEffect(() => {
         fetchMappings();
     }, [fetchMappings]);
@@ -444,9 +483,9 @@ function HomeContent() {
 
     useEffect(() => {
         if (selectedCountry && startDate) {
-            fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+            fetchAds(selectedCountry, startDate, endDate, adsPage, uniqueFilter, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
         }
-    }, [selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
+    }, [selectedCountry, startDate, endDate, adsPage, uniqueFilter, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection, fetchAds]);
 
     const handleMappingSort = (column: string) => {
         if (mappingSortColumn === column) {
@@ -581,7 +620,7 @@ function HomeContent() {
             } else if (activeTab === 'categories') {
                 fetchAllCategories(catCountry, catStartDate, catEndDate);
             } else if (selectedCountry && startDate) {
-                fetchAds(selectedCountry, startDate, endDate, adsPage, filterUniqueUrls, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
+                fetchAds(selectedCountry, startDate, endDate, adsPage, uniqueFilter, filterEmptyCategory, filterType, debouncedSearchCategory, debouncedSearchTitle, debouncedSearchLandingPage, sortColumn, sortDirection);
             }
             fetchCategories();
         } catch {
@@ -1616,19 +1655,23 @@ function HomeContent() {
                                         disabled={!selectedCountry}
                                     />
                                 </div>
+                            </div>
 
+                            <div className="filter-controls">
                                 <div className="filter-checkboxes">
-                                    <label className="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            checked={filterUniqueUrls}
-                                            onChange={(e) => {
-                                                setFilterUniqueUrls(e.target.checked);
-                                                setAdsPage(0);
-                                            }}
-                                        />
-                                        Unique landing pages
-                                    </label>
+                                    <select
+                                        value={uniqueFilter}
+                                        onChange={(e) => {
+                                            setUniqueFilter(e.target.value);
+                                            setAdsPage(0);
+                                        }}
+                                        style={{ padding: '0.3rem 0.5rem', borderRadius: '6px', border: '2px solid #e8e8e8', fontSize: '0.85rem' }}
+                                    >
+                                        <option value="none">No dedup</option>
+                                        <option value="uniqueUrls">Unique URLs</option>
+                                        <option value="uniqueCategoryUrl">Unique Category + URL</option>
+                                        <option value="uniqueTitleUrl">Unique Title + URL</option>
+                                    </select>
                                     <label className="checkbox-label">
                                         <input
                                             type="checkbox"
@@ -1653,6 +1696,14 @@ function HomeContent() {
                                         <option value="title_mapping">Title Mapping</option>
                                         <option value="ai_response">AI Response</option>
                                     </select>
+                                    <button
+                                        onClick={handleExportAds}
+                                        disabled={exporting || !selectedCountry || !startDate}
+                                        className="action-btn save-btn"
+                                        style={{ fontSize: '0.85rem', padding: '0.3rem 0.7rem' }}
+                                    >
+                                        {exporting ? 'Exporting...' : 'Export to Excel'}
+                                    </button>
                                 </div>
                             </div>
 
@@ -1804,15 +1855,17 @@ function HomeContent() {
                                                             )}
                                                         </td>
                                                         <td className="ads-url-cell">
-                                                            <a
-                                                                href={ad.landing_page}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="url-link"
-                                                                title={ad.landing_page}
-                                                            >
-                                                                {highlightMatch(ad.landing_page, debouncedSearchLandingPage)}
-                                                            </a>
+                                                            <div className="cleaned-url" style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '2px' }}>
+                                                                <a
+                                                                    href={ad.landing_page}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="url-link"
+                                                                    title={ad.landing_page}
+                                                                >
+                                                                    {highlightMatch(cleanUrl(ad.landing_page), debouncedSearchLandingPage)}
+                                                                </a>
+                                                            </div>
                                                             {ad.url_count > 1 && (
                                                                 <span className="count-tag">{ad.url_count} ads with this URL</span>
                                                             )}
