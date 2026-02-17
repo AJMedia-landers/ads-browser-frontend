@@ -133,6 +133,7 @@ function HomeContent() {
     const [newCategory, setNewCategory] = useState('');
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [hoveredUrlId, setHoveredUrlId] = useState<number | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState<number | null>(null);
@@ -179,6 +180,7 @@ function HomeContent() {
     const [selectedSourceCategory, setSelectedSourceCategory] = useState<string | null>(null);
     const [mergeTarget, setMergeTarget] = useState('');
     const [merging, setMerging] = useState(false);
+    const [normalising, setNormalising] = useState(false);
     const [categorySortColumn, setCategorySortColumn] = useState<'category' | 'mapping_count' | 'ad_count' | 'title_mapping_count'>('category');
     const [categorySortDirection, setCategorySortDirection] = useState<'asc' | 'desc'>('asc');
     const [catCountry, setCatCountry] = useState('');
@@ -204,6 +206,7 @@ function HomeContent() {
     const [deletingTitle, setDeletingTitle] = useState<number | null>(null);
     const [addingTitle, setAddingTitle] = useState(false);
     const titleLimit = 20;
+    const [infoModal, setInfoModal] = useState<string | null>(null);
 
     // Sync state to URL params
     useEffect(() => {
@@ -243,11 +246,14 @@ function HomeContent() {
             if (debouncedMappingSearchCategory) params.set('searchCategory', debouncedMappingSearchCategory);
 
             const res = await fetch(`/api/mappings?${params}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setMappings([]); setTotal(0); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load mappings.`); setMappings([]); setTotal(0); return; }
+            setFetchError(null);
             const data = await res.json();
             setMappings(data.mappings);
             setTotal(data.total);
         } catch {
-            setError('Failed to fetch mappings');
+            setFetchError('Could not connect to server — check your connection and try again.');
         } finally {
             setLoading(false);
         }
@@ -256,6 +262,7 @@ function HomeContent() {
     const fetchCategories = async () => {
         try {
             const res = await fetch('/api/categories');
+            if (!res.ok) { console.error(`Failed to fetch categories: ${res.status}`); return; }
             const data = await res.json();
             setCategories(Array.isArray(data) ? data : []);
         } catch {
@@ -276,11 +283,14 @@ function HomeContent() {
             if (debouncedTitleSearchCategory) params.set('searchCategory', debouncedTitleSearchCategory);
 
             const res = await fetch(`/api/title-mappings?${params}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setTitleMappings([]); setTitleMappingsTotal(0); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load title mappings.`); setTitleMappings([]); setTitleMappingsTotal(0); return; }
+            setFetchError(null);
             const data = await res.json();
             setTitleMappings(data.mappings);
             setTitleMappingsTotal(data.total);
         } catch {
-            setError('Failed to fetch title mappings');
+            setFetchError('Could not connect to server — check your connection and try again.');
         } finally {
             setTitleMappingsLoading(false);
         }
@@ -316,11 +326,14 @@ function HomeContent() {
             if (sTitle) params.set('searchTitle', sTitle);
             if (sLanding) params.set('searchLandingPage', sLanding);
             const res = await fetch(`/api/ads?${params}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setAds([]); setAdsTotal(0); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load ads.`); setAds([]); setAdsTotal(0); return; }
+            setFetchError(null);
             const data = await res.json();
             setAds(data.ads || []);
             setAdsTotal(data.total || 0);
         } catch {
-            setError('Failed to fetch ads');
+            setFetchError('Could not connect to server — check your connection and try again.');
             setAds([]);
             setAdsTotal(0);
         } finally {
@@ -675,10 +688,13 @@ function HomeContent() {
             if (eDate) params.set('endDate', eDate);
             const qs = params.toString();
             const res = await fetch(`/api/categories/all${qs ? `?${qs}` : ''}`);
+            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setAllCategories([]); return; }
+            if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load categories.`); setAllCategories([]); return; }
+            setFetchError(null);
             const data = await res.json();
             setAllCategories(Array.isArray(data) ? data : []);
         } catch {
-            setError('Failed to fetch categories');
+            setFetchError('Could not connect to server — check your connection and try again.');
         } finally {
             setLoadingAllCategories(false);
         }
@@ -793,25 +809,25 @@ function HomeContent() {
                     <div className="nav-tabs">
                         <button
                             className={`nav-tab ${activeTab === 'ads' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('ads')}
+                            onClick={() => { setActiveTab('ads'); setFetchError(null); }}
                         >
                             Ads Browser
                         </button>
                         <button
                             className={`nav-tab ${activeTab === 'mappings' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('mappings')}
+                            onClick={() => { setActiveTab('mappings'); setFetchError(null); }}
                         >
                             URL Mappings
                         </button>
                         <button
                             className={`nav-tab ${activeTab === 'titles' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('titles')}
+                            onClick={() => { setActiveTab('titles'); setFetchError(null); }}
                         >
                             Title Mappings
                         </button>
                         <button
                             className={`nav-tab ${activeTab === 'categories' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('categories')}
+                            onClick={() => { setActiveTab('categories'); setFetchError(null); }}
                         >
                             Categories
                         </button>
@@ -855,7 +871,10 @@ function HomeContent() {
                     {activeTab === 'titles' ? (
                         <>
                             <div className="admin-header">
-                                <h1>Title Mappings</h1>
+                                <div className="header-title-group">
+                                    <h1>Title Mappings</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('titles')}>&#9432; How this works</button>
+                                </div>
                                 <button
                                     onClick={() => setShowAddTitleModal(true)}
                                     className="btn btn-primary"
@@ -918,7 +937,7 @@ function HomeContent() {
                                         ) : titleMappings.length === 0 ? (
                                             <tr>
                                                 <td colSpan={6} className="empty-cell">
-                                                    No title mappings found
+                                                    {fetchError || 'No title mappings found'}
                                                 </td>
                                             </tr>
                                         ) : (
@@ -1083,7 +1102,59 @@ function HomeContent() {
                     ) : activeTab === 'categories' ? (
                         <>
                             <div className="admin-header">
-                                <h1>Category Deduplication</h1>
+                                <div className="header-title-group">
+                                    <h1>Category Deduplication</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('categories')}>&#9432; How this works</button>
+                                </div>
+                                <button
+                                    className="btn btn-primary"
+                                    disabled={normalising}
+                                    onClick={() => {
+                                        setConfirmAction({
+                                            message: 'This will deduplicate categories and backcategorise all ads. Data may be temporarily inconsistent — this can take several minutes.',
+                                            onConfirm: async () => {
+                                                setConfirmAction(null);
+                                                setNormalising(true);
+                                                try {
+                                                    const res = await fetch('/api/categories/normalise', { method: 'POST' });
+                                                    if (!res.ok) {
+                                                        const data = await res.json();
+                                                        alert(data.error || 'Failed to start normalisation');
+                                                        setNormalising(false);
+                                                        return;
+                                                    }
+                                                    // Poll status every 5s
+                                                    const poll = setInterval(async () => {
+                                                        try {
+                                                            const statusRes = await fetch('/api/categories/normalise/status');
+                                                            const status = await statusRes.json();
+                                                            if (status.status !== 'running') {
+                                                                clearInterval(poll);
+                                                                setNormalising(false);
+                                                                if (status.status === 'completed') {
+                                                                    const s = status.stats;
+                                                                    alert(`Normalisation complete!\n\nDeduplicated: ${s.deduplicated.urlMappings} URL mappings, ${s.deduplicated.ads} ads, ${s.deduplicated.titleMappings} title mappings\n\nBackcategorised: ${s.backcategorised.urlMappingsFixed} URL mappings fixed, ${s.backcategorised.titleMappingsFixed} title mappings fixed, ${s.backcategorised.adsFromUrlMappings + s.backcategorised.adsFromTitleMappings} ads updated`);
+                                                                } else {
+                                                                    alert('Normalisation failed: ' + (status.error || 'Unknown error'));
+                                                                }
+                                                                fetchAllCategories(catCountry, catStartDate, catEndDate);
+                                                            }
+                                                        } catch {
+                                                            clearInterval(poll);
+                                                            setNormalising(false);
+                                                            alert('Lost connection while polling normalisation status');
+                                                        }
+                                                    }, 5000);
+                                                } catch {
+                                                    setNormalising(false);
+                                                    alert('Failed to start normalisation');
+                                                }
+                                            },
+                                        });
+                                    }}
+                                >
+                                    {normalising ? 'Normalising...' : 'Normalise Data'}
+                                </button>
                             </div>
 
                             <div className="filter-controls">
@@ -1157,7 +1228,7 @@ function HomeContent() {
                                             <p>Loading categories...</p>
                                         </div>
                                     ) : filteredAllCategories.length === 0 ? (
-                                        <div className="ads-empty">No categories found.</div>
+                                        <div className="ads-empty">{fetchError || 'No categories found.'}</div>
                                     ) : (
                                         <div className="dedup-list-body">
                                             {filteredAllCategories.map((cat) => (
@@ -1225,7 +1296,10 @@ function HomeContent() {
                     ) : activeTab === 'mappings' ? (
                         <>
                             <div className="admin-header">
-                                <h1>URL Mapping Admin</h1>
+                                <div className="header-title-group">
+                                    <h1>URL Mapping Admin</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('mappings')}>&#9432; How this works</button>
+                                </div>
                                 <button
                                     onClick={() => setShowAddModal(true)}
                                     className="btn btn-primary"
@@ -1287,7 +1361,7 @@ function HomeContent() {
                                         ) : mappings.length === 0 ? (
                                             <tr>
                                                 <td colSpan={5} className="empty-cell">
-                                                    No mappings found
+                                                    {fetchError || 'No mappings found'}
                                                 </td>
                                             </tr>
                                         ) : (
@@ -1484,7 +1558,10 @@ function HomeContent() {
                     ) : (
                         <>
                             <div className="admin-header">
-                                <h1>Ads Browser</h1>
+                                <div className="header-title-group">
+                                    <h1>Ads Browser</h1>
+                                    <button className="info-btn" onClick={() => setInfoModal('ads')}>&#9432; How this works</button>
+                                </div>
                             </div>
 
                             <div className="filter-controls">
@@ -1773,7 +1850,7 @@ function HomeContent() {
                                 </>
                             ) : selectedCountry && startDate ? (
                                 <div className="ads-empty">
-                                    No ads found for the selected country and date range.
+                                        {fetchError || 'No ads found for the selected country and date range.'}
                                 </div>
                             ) : (
                                 <div className="ads-empty">
@@ -1809,6 +1886,108 @@ function HomeContent() {
                             >
                                 Confirm
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Info modal */}
+            {infoModal && (
+                <div className="modal-overlay" onClick={() => setInfoModal(null)}>
+                    <div className="info-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="info-modal-header">
+                            <h2>{infoModal === 'ads' ? 'Ads Browser' : infoModal === 'mappings' ? 'URL Mappings' : infoModal === 'titles' ? 'Title Mappings' : infoModal === 'categories' ? 'Categories & Normalise Data' : ''}</h2>
+                            <button className="close-icon" onClick={() => setInfoModal(null)}>&times;</button>
+                        </div>
+                        <div className="info-modal-body">
+                            {infoModal === 'ads' && (
+                                <>
+                                    <p><strong>What is this?</strong></p>
+                                    <p>This is where you can see every ad we&apos;ve scraped. Pick a country and date range and you&apos;ll get a list of ads &mdash; each one shows the ad image, its title, where it links to, and what category it&apos;s been tagged with (if any).</p>
+
+                                    <p><strong>Categorising ads</strong></p>
+                                    <p>The main job here is to give each ad a category. When you set a category on an ad (e.g. tagging a Sportsbet ad as &ldquo;Gambling&rdquo;), two things happen:</p>
+                                    <ul>
+                                        <li>That ad gets the category you chose.</li>
+                                        <li>A URL mapping is created automatically, so <em>every other ad</em> that links to the same website &mdash; past and future &mdash; gets the same category too. For example, if you categorise one ad pointing to <code>sportsbet.com.au</code>, all 500+ other ads pointing there will also become &ldquo;Gambling&rdquo;.</li>
+                                    </ul>
+
+                                    <p><strong>Finding ads that need attention</strong></p>
+                                    <ul>
+                                        <li><strong>Show only uncategorised</strong> &mdash; filters to ads that don&apos;t have a category yet. This is the quickest way to find work to do.</li>
+                                        <li><strong>Show only unique URLs</strong> &mdash; hides duplicate landing pages so you only see each website once. Useful when the same ad appears dozens of times.</li>
+                                        <li><strong>Search</strong> &mdash; look for ads by category name, title text, or landing page URL.</li>
+                                    </ul>
+
+                                    <p><strong>Not Interested</strong></p>
+                                    <p>If an ad isn&apos;t relevant (e.g. a generic news article, not a real ad), you can mark it as &ldquo;Not Interested&rdquo; to hide it from future review.</p>
+                                </>
+                            )}
+                            {infoModal === 'mappings' && (
+                                <>
+                                    <p><strong>What is this?</strong></p>
+                                    <p>URL mappings are rules that automatically assign a category to any ad based on its landing page URL. When a new ad comes in, the system checks if its URL matches a mapping &mdash; if it does, the ad gets categorised automatically.</p>
+
+                                    <p><strong>How does matching work?</strong></p>
+                                    <p>URLs are &ldquo;cleaned&rdquo; before matching: query parameters (tracking codes), www prefixes, and trailing slashes are removed, so <code>https://www.example.com/page?ref=123</code> and <code>https://example.com/page</code> are treated as the same URL.</p>
+
+                                    <p><strong>What can I do here?</strong></p>
+                                    <ul>
+                                        <li><strong>Add a mapping</strong> &mdash; enter a URL and a category. All existing ads with that URL will be updated immediately.</li>
+                                        <li><strong>Edit a mapping&apos;s category</strong> &mdash; all ads using that URL will be re-categorised.</li>
+                                        <li><strong>Delete a mapping</strong> &mdash; removes the rule (existing ads keep their current category).</li>
+                                        <li><strong>Search</strong> by URL or category to find specific mappings.</li>
+                                    </ul>
+                                </>
+                            )}
+                            {infoModal === 'titles' && (
+                                <>
+                                    <p><strong>What is this?</strong></p>
+                                    <p>Title mappings work like URL mappings, but they match ads by their <em>title text</em> instead of their URL. This is useful when many different URLs share the same ad title (e.g. a brand running the same ad across many publishers).</p>
+
+                                    <p><strong>How does matching work?</strong></p>
+                                    <p>Titles are compared with extra whitespace removed, so minor formatting differences are ignored. Title mappings are lower priority than URL mappings &mdash; if an ad matches both a URL mapping and a title mapping, the URL mapping wins.</p>
+
+                                    <p><strong>What can I do here?</strong></p>
+                                    <ul>
+                                        <li><strong>Add a title mapping</strong> &mdash; enter a title and a category.</li>
+                                        <li><strong>Edit or delete</strong> existing title mappings.</li>
+                                        <li><strong>Search</strong> by title or category.</li>
+                                    </ul>
+                                </>
+                            )}
+                            {infoModal === 'categories' && (
+                                <>
+                                    <p><strong>What is this page?</strong></p>
+                                    <p>This page lists every category in the system and shows how many ads, URL mappings, and title mappings use each one. Use it to spot duplicates and clean things up.</p>
+
+                                    <p><strong>Merging categories</strong></p>
+                                    <p>If you notice two categories that should be one (e.g. &ldquo;Gambling&rdquo; and &ldquo;Online Gambling&rdquo;), click on the one you want to get rid of, type the name you want to keep, and hit merge. Everything using the old name switches to the new one.</p>
+
+                                    <hr />
+
+                                    <p><strong>What does &ldquo;Normalise Data&rdquo; do?</strong></p>
+                                    <p>It&apos;s a big cleanup button that fixes two problems at once. It takes a few minutes to run, but you can safely leave it going.</p>
+
+                                    <p><strong>1. Fixes duplicate category names</strong></p>
+                                    <p>Over time the same category can get entered in slightly different ways. For example, you might have:</p>
+                                    <ul>
+                                        <li>&ldquo;Health &amp; Beauty&rdquo;</li>
+                                        <li>&ldquo;health &amp; beauty&rdquo;</li>
+                                        <li>&ldquo;Health&amp;Beauty&rdquo;</li>
+                                        <li>&ldquo;Health  &amp;  Beauty&rdquo;</li>
+                                    </ul>
+                                    <p>Normalise finds all these variants and merges them into one name &mdash; whichever version is used the most. So if &ldquo;Health &amp; Beauty&rdquo; appears 200 times and &ldquo;health &amp; beauty&rdquo; appears 50 times, everything becomes &ldquo;Health &amp; Beauty&rdquo;.</p>
+
+                                    <p><strong>2. Fills in missing categories using your existing work</strong></p>
+                                    <p>When you categorise an ad (say you tag <code>sportsbet.com.au</code> as &ldquo;Gambling&rdquo;), that only applies going forward. But there might be hundreds of older ads pointing to <code>sportsbet.com.au</code> that were scraped <em>before</em> you created that mapping &mdash; those old ads are still sitting there with no category.</p>
+                                    <p>Normalise goes back through <strong>all historical data</strong> and applies your mappings retroactively. Every ad that matches a URL or title mapping you&apos;ve set up gets the correct category, no matter how old it is. This means your reports and category counts will include the full picture, not just ads scraped after you did the categorisation work.</p>
+                                    <p>It also cross-references between URL and title mappings. For example: if a URL mapping is marked &ldquo;unknown&rdquo; but an ad with that URL has a title you&apos;ve already categorised, it will use the title mapping to fix the URL mapping too.</p>
+
+                                    <p><strong>Is it safe?</strong></p>
+                                    <p>Yes &mdash; it never deletes anything. It only fills in blanks and fixes inconsistencies. The numbers on this page might jump around while it&apos;s running, but once it finishes the page refreshes automatically and everything will be consistent.</p>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>
