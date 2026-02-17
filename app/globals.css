@@ -1360,14 +1360,43 @@ body {
     font-size: 0.85rem;
 }
 
+.dedup-source-list {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
 .dedup-source-value {
-    padding: 0.6rem 0.75rem;
+    padding: 0.4rem 0.75rem;
     background: #fee2e2;
     color: #991b1b;
     border-radius: 8px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 500;
     word-break: break-word;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.dedup-source-remove {
+    background: none;
+    border: none;
+    color: #991b1b;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0 0.25rem;
+    line-height: 1;
+    opacity: 0.6;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.dedup-source-remove:hover {
+    opacity: 1;
 }
 
 .dedup-merge-target input {

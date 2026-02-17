@@ -179,7 +179,7 @@ function HomeContent() {
     const [allCategories, setAllCategories] = useState<CategoryWithCounts[]>([]);
     const [loadingAllCategories, setLoadingAllCategories] = useState(false);
     const [categorySearch, setCategorySearch] = useState('');
-    const [selectedSourceCategory, setSelectedSourceCategory] = useState<string | null>(null);
+    const [selectedSourceCategories, setSelectedSourceCategories] = useState<Set<string>>(new Set());
     const [mergeTarget, setMergeTarget] = useState('');
     const [merging, setMerging] = useState(false);
     const [normalising, setNormalising] = useState(false);
@@ -367,7 +367,7 @@ function HomeContent() {
             setEditingAdId(null);
             const mappingMsg = data.mappingCreated ? 'URL mapping created. ' : 'URL mapping updated. ';
             setSuccess(`${mappingMsg}${data.rowsUpdated} ad records updated.`);
-            setTimeout(() => setSuccess(''), 5000);
+
 
             // Update local state to reflect the change for all matching URLs
             // Use same cleaning logic as backend
@@ -411,7 +411,7 @@ function HomeContent() {
 
                     const data = await res.json();
                     setSuccess(`Marked as uninterested. ${data.rowsDeleted} ad records deleted.`);
-                    setTimeout(() => setSuccess(''), 5000);
+        
 
                     const cleanedUrl = cleanUrl(ad.landing_page);
                     const baseUrl = cleanedUrl.replace(/^https?:\/\/(www\.)?/, '');
@@ -526,7 +526,7 @@ function HomeContent() {
 
             setEditingTitleId(null);
             setSuccess('Title mapping updated.');
-            setTimeout(() => setSuccess(''), 5000);
+
             fetchTitleMappings();
             fetchCategories();
         } catch {
@@ -547,7 +547,7 @@ function HomeContent() {
                     const res = await fetch(`/api/title-mappings/${id}`, { method: 'DELETE' });
                     if (!res.ok) throw new Error('Failed to delete');
                     setSuccess('Title mapping deleted.');
-                    setTimeout(() => setSuccess(''), 3000);
+
                     fetchTitleMappings();
                 } catch {
                     setError('Failed to delete title mapping');
@@ -583,7 +583,7 @@ function HomeContent() {
             setNewTitle('');
             setNewTitleCategory('');
             setSuccess('Title mapping created.');
-            setTimeout(() => setSuccess(''), 5000);
+
             fetchTitleMappings();
             fetchCategories();
         } catch (err) {
@@ -611,7 +611,6 @@ function HomeContent() {
             const res = await fetch('/api/cache/clear', { method: 'POST' });
             if (!res.ok) throw new Error('Failed to clear cache');
             setSuccess('Cache cleared. Refreshing data...');
-            setTimeout(() => setSuccess(''), 3000);
             // Re-fetch current tab's data
             if (activeTab === 'mappings') {
                 fetchMappings();
@@ -656,7 +655,7 @@ function HomeContent() {
             const data = await res.json();
             setEditingId(null);
             setSuccess(`Mapping updated. ${data.stagingRowsUpdated} ad records updated.`);
-            setTimeout(() => setSuccess(''), 5000);
+
             fetchMappings();
             fetchCategories();
         } catch {
@@ -677,7 +676,7 @@ function HomeContent() {
                     const res = await fetch(`/api/mappings/${id}`, { method: 'DELETE' });
                     if (!res.ok) throw new Error('Failed to delete');
                     setSuccess('Mapping deleted.');
-                    setTimeout(() => setSuccess(''), 3000);
+
                     fetchMappings();
                     fetchCategories();
                 } catch {
@@ -707,7 +706,7 @@ function HomeContent() {
 
                     const data = await res.json();
                     setSuccess(`Marked as uninterested. ${data.rowsDeleted} ad records deleted.`);
-                    setTimeout(() => setSuccess(''), 5000);
+        
                     fetchMappings();
                 } catch {
                     setError('Failed to mark as uninterested');
@@ -746,38 +745,47 @@ function HomeContent() {
     }, [activeTab, catCountry, catStartDate, catEndDate, fetchAllCategories]);
 
     const handleMergeCategory = () => {
-        if (!selectedSourceCategory || !mergeTarget.trim()) return;
-        if (selectedSourceCategory === mergeTarget.trim()) {
-            setError('Source and target categories must be different');
+        if (selectedSourceCategories.size === 0 || !mergeTarget.trim()) return;
+        if (selectedSourceCategories.has(mergeTarget.trim())) {
+            setError('Target category cannot be one of the selected source categories');
             return;
         }
+        const sourceList = Array.from(selectedSourceCategories);
         setConfirmAction({
-            message: `Merge "${selectedSourceCategory}" into "${mergeTarget.trim()}"? All records will be updated to use the target category name.`,
+            message: `Merge ${sourceList.length} categor${sourceList.length === 1 ? 'y' : 'ies'} into "${mergeTarget.trim()}"?\n\nSources:\n${sourceList.map(s => `  • ${s}`).join('\n')}\n\nAll records will be updated to use the target category name.`,
             onConfirm: async () => {
                 setConfirmAction(null);
                 setMerging(true);
                 setError('');
+                let totalMappings = 0;
+                let totalTitleMappings = 0;
+                let totalAds = 0;
                 try {
-                    const res = await fetch('/api/categories/rename', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            oldCategory: selectedSourceCategory,
-                            newCategory: mergeTarget.trim(),
-                        }),
-                    });
+                    for (const source of sourceList) {
+                        const res = await fetch('/api/categories/rename', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                oldCategory: source,
+                                newCategory: mergeTarget.trim(),
+                            }),
+                        });
 
-                    if (!res.ok) throw new Error('Failed to merge');
+                        if (!res.ok) throw new Error(`Failed to merge "${source}"`);
 
-                    const data = await res.json();
-                    setSuccess(`Merged! ${data.mappingsUpdated} URL mappings, ${data.titleMappingsUpdated} title mappings, and ${data.adsUpdated} ads updated.`);
-                    setTimeout(() => setSuccess(''), 5000);
-                    setSelectedSourceCategory(null);
+                        const data = await res.json();
+                        totalMappings += data.mappingsUpdated;
+                        totalTitleMappings += data.titleMappingsUpdated;
+                        totalAds += data.adsUpdated;
+                    }
+                    setSuccess(`Merged ${sourceList.length} categories! ${totalMappings} URL mappings, ${totalTitleMappings} title mappings, and ${totalAds} ads updated.`);
+        
+                    setSelectedSourceCategories(new Set());
                     setMergeTarget('');
                     fetchAllCategories(catCountry, catStartDate, catEndDate);
                     fetchCategories();
-                } catch {
-                    setError('Failed to merge categories');
+                } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to merge categories');
                 } finally {
                     setMerging(false);
                 }
@@ -829,7 +837,7 @@ function HomeContent() {
             setNewUrl('');
             setNewCategory('');
             setSuccess(`Mapping created. ${data.stagingRowsUpdated} ad records updated.`);
-            setTimeout(() => setSuccess(''), 5000);
+
             fetchMappings();
             fetchCategories();
         } catch (err) {
@@ -1273,12 +1281,17 @@ function HomeContent() {
                                             {filteredAllCategories.map((cat) => (
                                                 <div
                                                     key={cat.category}
-                                                    className={`dedup-row ${selectedSourceCategory === cat.category ? 'selected' : ''}`}
+                                                    className={`dedup-row ${selectedSourceCategories.has(cat.category) ? 'selected' : ''}`}
                                                     onClick={() => {
-                                                        setSelectedSourceCategory(
-                                                            selectedSourceCategory === cat.category ? null : cat.category
-                                                        );
-                                                        setMergeTarget('');
+                                                        setSelectedSourceCategories(prev => {
+                                                            const next = new Set(prev);
+                                                            if (next.has(cat.category)) {
+                                                                next.delete(cat.category);
+                                                            } else {
+                                                                next.add(cat.category);
+                                                            }
+                                                            return next;
+                                                        });
                                                     }}
                                                 >
                                                     <span className="dedup-row-name">{highlightMatch(cat.category, categorySearch)}</span>
@@ -1292,12 +1305,27 @@ function HomeContent() {
                                 </div>
 
                                 <div className="dedup-merge-panel">
-                                    {selectedSourceCategory ? (
+                                    {selectedSourceCategories.size > 0 ? (
                                         <>
-                                            <h3>Merge Category</h3>
+                                            <h3>Merge {selectedSourceCategories.size} Categor{selectedSourceCategories.size === 1 ? 'y' : 'ies'}</h3>
                                             <div className="dedup-merge-source">
-                                                <label>Source (will be renamed)</label>
-                                                <div className="dedup-source-value">{selectedSourceCategory}</div>
+                                                <label>Sources (will be renamed)</label>
+                                                <div className="dedup-source-list">
+                                                    {Array.from(selectedSourceCategories).map(src => (
+                                                        <div key={src} className="dedup-source-value">
+                                                            {src}
+                                                            <button
+                                                                className="dedup-source-remove"
+                                                                onClick={() => setSelectedSourceCategories(prev => {
+                                                                    const next = new Set(prev);
+                                                                    next.delete(src);
+                                                                    return next;
+                                                                })}
+                                                                title="Remove"
+                                                            >&times;</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                             <div className="dedup-merge-target">
                                                 <label htmlFor="merge-target">Target (new name)</label>
@@ -1315,12 +1343,12 @@ function HomeContent() {
                                                 onClick={handleMergeCategory}
                                                 disabled={!mergeTarget.trim() || merging}
                                             >
-                                                {merging ? 'Merging...' : 'Merge'}
+                                                {merging ? 'Merging...' : `Merge ${selectedSourceCategories.size} → ${mergeTarget.trim() || '...'}`}
                                             </button>
                                         </>
                                     ) : (
                                         <div className="dedup-merge-empty">
-                                            Select a category from the list to merge it into another.
+                                            Click categories from the list to select them for merging. You can select multiple.
                                         </div>
                                     )}
                                 </div>
