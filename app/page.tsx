@@ -104,6 +104,13 @@ function HomeContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
 
+    const handleSessionExpired = useCallback(() => {
+        fetch("/api/auth/logout", { method: "POST" }).finally(() => {
+            router.push("/login");
+            router.refresh();
+        });
+    }, [router]);
+
     // Initialize state from URL params
     const tabParam = searchParams.get('tab');
     const initialTab: 'mappings' | 'ads' | 'categories' | 'titles' = tabParam === 'mappings' ? 'mappings' : tabParam === 'categories' ? 'categories' : tabParam === 'titles' ? 'titles' : 'ads';
@@ -248,7 +255,7 @@ function HomeContent() {
             if (debouncedMappingSearchCategory) params.set('searchCategory', debouncedMappingSearchCategory);
 
             const res = await fetch(`/api/mappings?${params}`);
-            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setMappings([]); setTotal(0); return; }
+            if (res.status === 401) { handleSessionExpired(); return; }
             if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load mappings.`); setMappings([]); setTotal(0); return; }
             setFetchError(null);
             const data = await res.json();
@@ -285,7 +292,7 @@ function HomeContent() {
             if (debouncedTitleSearchCategory) params.set('searchCategory', debouncedTitleSearchCategory);
 
             const res = await fetch(`/api/title-mappings?${params}`);
-            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setTitleMappings([]); setTitleMappingsTotal(0); return; }
+            if (res.status === 401) { handleSessionExpired(); return; }
             if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load title mappings.`); setTitleMappings([]); setTitleMappingsTotal(0); return; }
             setFetchError(null);
             const data = await res.json();
@@ -328,7 +335,7 @@ function HomeContent() {
             if (sTitle) params.set('searchTitle', sTitle);
             if (sLanding) params.set('searchLandingPage', sLanding);
             const res = await fetch(`/api/ads?${params}`);
-            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setAds([]); setAdsTotal(0); return; }
+            if (res.status === 401) { handleSessionExpired(); return; }
             if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load ads.`); setAds([]); setAdsTotal(0); return; }
             setFetchError(null);
             const data = await res.json();
@@ -735,7 +742,7 @@ function HomeContent() {
             if (eDate) params.set('endDate', eDate);
             const qs = params.toString();
             const res = await fetch(`/api/categories/all${qs ? `?${qs}` : ''}`);
-            if (res.status === 401) { setFetchError('Session expired — please log in again.'); setAllCategories([]); return; }
+            if (res.status === 401) { handleSessionExpired(); return; }
             if (!res.ok) { setFetchError(`Server error (${res.status}) — could not load categories.`); setAllCategories([]); return; }
             setFetchError(null);
             const data = await res.json();
